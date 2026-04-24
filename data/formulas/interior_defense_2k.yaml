@@ -1,0 +1,22 @@
+attribute: interior_defense_2k
+version: 1
+type: linear_regression
+features:
+- name: blk_per36
+  coef: 9.298997
+- name: dreb_per36
+  coef: -0.554754
+- name: height_in
+  coef: -1.792805
+- name: wingspan_in
+  coef: 2.81405
+- name: weight_lbs
+  coef: 0.048182
+intercept: -45.395665
+clamp:
+- 25
+- 99
+r2: 0.4039
+mae: 8.622
+n_samples: 29
+notes: ''

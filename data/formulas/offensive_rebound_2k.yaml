@@ -1,0 +1,18 @@
+attribute: offensive_rebound_2k
+version: 1
+type: linear_regression
+features:
+- name: oreb_per36
+  coef: 11.898882
+- name: height_in
+  coef: 0.335725
+- name: weight_lbs
+  coef: 0.013973
+intercept: -0.243988
+clamp:
+- 25
+- 99
+r2: 0.9679
+mae: 1.968
+n_samples: 361
+notes: ''

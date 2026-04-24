@@ -1,0 +1,20 @@
+attribute: strength_2k
+version: 1
+type: linear_regression
+features:
+- name: weight_lbs
+  coef: -1.910287
+- name: height_in
+  coef: 11.197531
+- name: bmi
+  coef: 19.205865
+- name: wingspan_in
+  coef: 1.320728
+intercept: -989.77798
+clamp:
+- 25
+- 99
+r2: 0.451
+mae: 5.263
+n_samples: 29
+notes: ''

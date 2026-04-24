@@ -1,0 +1,16 @@
+attribute: steal_2k
+version: 1
+type: linear_regression
+features:
+- name: stl_per36
+  coef: 31.424364
+- name: wingspan_minus_height
+  coef: 0.70808
+intercept: 10.536333
+clamp:
+- 25
+- 99
+r2: 0.8625
+mae: 3.889
+n_samples: 29
+notes: ''

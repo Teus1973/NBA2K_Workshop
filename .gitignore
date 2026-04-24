@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Secrets and per-user state
+.env
+.env.local
+credentials.json
+token.json
+token.pickle
+*.pem
+
+# SQLite databases (except schema-empty checked-in seed, if any)
+data/workshop.db
+data/workshop.db-journal
+data/workshop.db-wal
+data/workshop.db-shm
+
+# HTTP response cache (raw scraped HTML / JSON)
+data/cache/
+
+# User-generated exports and uploads
+data/exports/
+data/user_uploads/
+
+# Streamlit runtime
+.streamlit/secrets.toml
+
+# Session log (append-only)
+nba2k_workshop_session.log
+
+# Launcher log (rolling)
+streamlit_launcher.log
+
+# Test artifacts
+tests/tmp/

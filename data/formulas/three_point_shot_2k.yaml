@@ -1,0 +1,18 @@
+attribute: three_point_shot_2k
+version: 1
+type: linear_regression
+features:
+- name: fg3_pct
+  coef: 41.442192
+- name: fg3a_per36
+  coef: 1.790537
+- name: ft_pct
+  coef: 18.53907
+intercept: 38.325159
+clamp:
+- 25
+- 99
+r2: 0.567
+mae: 4.85
+n_samples: 362
+notes: League 3pt-line penalty is applied at inference time.

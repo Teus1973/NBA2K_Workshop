@@ -1,0 +1,20 @@
+attribute: offensive_consistency_2k
+version: 1
+type: linear_regression
+features:
+- name: fg_pct
+  coef: 28.465388
+- name: ft_pct
+  coef: 16.770068
+- name: usg_proxy
+  coef: 2.972271
+- name: tov_per36
+  coef: -5.064002
+intercept: 4.518958
+clamp:
+- 25
+- 99
+r2: 0.4898
+mae: 10.213
+n_samples: 362
+notes: ''

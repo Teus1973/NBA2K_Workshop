@@ -1,0 +1,18 @@
+attribute: pass_vision_2k
+version: 1
+type: linear_regression
+features:
+- name: ast_per36
+  coef: 7.234984
+- name: tov_per36
+  coef: -0.658895
+- name: usg_proxy
+  coef: 0.801346
+intercept: 13.160331
+clamp:
+- 25
+- 99
+r2: 0.8994
+mae: 4.417
+n_samples: 362
+notes: ''

@@ -1,0 +1,18 @@
+attribute: hustle_2k
+version: 1
+type: linear_regression
+features:
+- name: stl_per36
+  coef: 1.770946
+- name: oreb_per36
+  coef: 0.954271
+- name: blk_per36
+  coef: 0.663773
+intercept: 78.985914
+clamp:
+- 25
+- 99
+r2: 0.0441
+mae: 6.269
+n_samples: 362
+notes: ''

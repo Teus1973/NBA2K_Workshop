@@ -1,0 +1,18 @@
+attribute: speed_2k
+version: 1
+type: linear_regression
+features:
+- name: three_quarter_sprint_sec
+  coef: 0.0
+- name: weight_lbs
+  coef: 0.0
+- name: height_in
+  coef: 0.0
+intercept: 70.0
+clamp:
+- 25
+- 99
+r2: 0.0
+mae: 0.0
+n_samples: 24
+notes: Combine override applies when c_speed_2k is present. (stub; n=24)

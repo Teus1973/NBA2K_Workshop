@@ -1,0 +1,16 @@
+attribute: pass_accuracy_2k
+version: 1
+type: linear_regression
+features:
+- name: ast_per36
+  coef: 5.177396
+- name: tov_per36
+  coef: -1.994676
+intercept: 51.411394
+clamp:
+- 25
+- 99
+r2: 0.4935
+mae: 7.169
+n_samples: 362
+notes: ''

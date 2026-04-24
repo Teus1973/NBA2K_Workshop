@@ -1,0 +1,16 @@
+attribute: mid_range_shot_2k
+version: 1
+type: linear_regression
+features:
+- name: fg_pct
+  coef: -5.567744
+- name: fg3_pct
+  coef: 17.233656
+intercept: 72.50797
+clamp:
+- 25
+- 99
+r2: 0.0264
+mae: 9.139
+n_samples: 362
+notes: ''

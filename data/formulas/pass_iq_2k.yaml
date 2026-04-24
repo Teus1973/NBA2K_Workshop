@@ -1,0 +1,16 @@
+attribute: pass_iq_2k
+version: 1
+type: linear_regression
+features:
+- name: ast_per36
+  coef: 4.966617
+- name: tov_per36
+  coef: -1.835017
+intercept: 54.188682
+clamp:
+- 25
+- 99
+r2: 0.5099
+mae: 6.672
+n_samples: 362
+notes: ''

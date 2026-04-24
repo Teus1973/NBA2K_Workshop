@@ -1,0 +1,20 @@
+attribute: post_control_2k
+version: 1
+type: linear_regression
+features:
+- name: fg_pct
+  coef: -1.522422
+- name: weight_lbs
+  coef: 0.274903
+- name: height_in
+  coef: 2.146905
+- name: is_c
+  coef: 0.0
+intercept: -171.851764
+clamp:
+- 25
+- 99
+r2: 0.5437
+mae: 8.833
+n_samples: 361
+notes: ''

@@ -1,0 +1,81 @@
+attribute: overall_2k
+version: 1
+type: position_weighted_sum
+per_position:
+  SF:
+    weights:
+    - name: strength_2k
+      coef: 0.014221
+    - name: vertical_2k
+      coef: 0.031563
+    - name: speed_2k
+      coef: 0.003867
+    - name: agility_2k
+      coef: 0.071534
+    - name: speed_with_ball_2k
+      coef: -0.02062
+    - name: stamina_2k
+      coef: 0.054444
+    - name: hustle_2k
+      coef: 0.013724
+    - name: three_point_shot_2k
+      coef: 0.008754
+    - name: free_throws_2k
+      coef: 0.068174
+    - name: mid_range_shot_2k
+      coef: 0.055674
+    - name: close_shot_2k
+      coef: 0.063633
+    - name: shot_iq_2k
+      coef: 0.068844
+    - name: offensive_consistency_2k
+      coef: 0.06556
+    - name: driving_layup_2k
+      coef: 0.101447
+    - name: driving_dunk_2k
+      coef: 0.004981
+    - name: standing_dunk_2k
+      coef: 0.011593
+    - name: post_control_2k
+      coef: 0.019273
+    - name: draw_foul_2k
+      coef: 0.041332
+    - name: hands_2k
+      coef: 0.054215
+    - name: ball_handle_2k
+      coef: 0.025329
+    - name: pass_iq_2k
+      coef: -0.009927
+    - name: pass_accuracy_2k
+      coef: 0.042811
+    - name: pass_vision_2k
+      coef: 0.036879
+    - name: interior_defense_2k
+      coef: 0.033681
+    - name: perimeter_defense_2k
+      coef: -0.054373
+    - name: block_2k
+      coef: 0.021643
+    - name: steal_2k
+      coef: 0.004589
+    - name: defensive_rebound_2k
+      coef: 0.021898
+    - name: offensive_rebound_2k
+      coef: 0.032702
+    - name: help_defense_iq_2k
+      coef: 0.078501
+    - name: pass_perception_2k
+      coef: 0.004209
+    - name: defensive_consistency_2k
+      coef: 0.057282
+    intercept: 5.690212
+    r2: 0.8759
+    mae: 1.5
+    n_samples: 362
+clamp:
+- 25
+- 99
+r2: 0.8759
+mae: 1.5
+n_samples: 362
+notes: Position-aware weighted sum of the 32 per-attribute ratings.

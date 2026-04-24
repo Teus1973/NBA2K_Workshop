@@ -1,0 +1,18 @@
+attribute: draw_foul_2k
+version: 1
+type: linear_regression
+features:
+- name: fta_per36
+  coef: 2.842063
+- name: pts
+  coef: 1.066015
+- name: fg_pct
+  coef: -12.898662
+intercept: 43.126446
+clamp:
+- 25
+- 99
+r2: 0.4683
+mae: 9.792
+n_samples: 362
+notes: ''

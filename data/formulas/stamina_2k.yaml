@@ -1,0 +1,16 @@
+attribute: stamina_2k
+version: 1
+type: linear_regression
+features:
+- name: min
+  coef: 0.34118
+- name: gp
+  coef: 0.008558
+intercept: 78.086274
+clamp:
+- 25
+- 99
+r2: 0.1698
+mae: 3.965
+n_samples: 362
+notes: ''

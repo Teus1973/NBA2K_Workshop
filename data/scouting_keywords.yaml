@@ -1,0 +1,109 @@
+# Keyword dictionary for scouting-report phrase modulation.
+#
+# Each keyword (case-insensitive substring) bumps the listed attributes by the
+# given delta (applied after formula + combine override, before manual override).
+# All modulations are written to audit_log.
+#
+# You can add / remove / re-weight any entry here and the next recalc will
+# pick it up automatically.
+
+keywords:
+  # Athleticism
+  - phrase: "elite athlete"
+    deltas: { vertical_2k: +3, speed_2k: +2, agility_2k: +2 }
+  - phrase: "explosive athlete"
+    deltas: { vertical_2k: +4, driving_dunk_2k: +3, speed_2k: +2 }
+  - phrase: "freakish athlete"
+    deltas: { vertical_2k: +4, speed_2k: +3, strength_2k: +1 }
+  - phrase: "length"
+    deltas: { block_2k: +2, steal_2k: +1, interior_defense_2k: +1 }
+  - phrase: "long wingspan"
+    deltas: { block_2k: +2, steal_2k: +2, perimeter_defense_2k: +1 }
+  - phrase: "quick first step"
+    deltas: { speed_with_ball_2k: +3, driving_layup_2k: +2 }
+  - phrase: "below the rim"
+    deltas: { vertical_2k: -3, driving_dunk_2k: -4, standing_dunk_2k: -2 }
+  - phrase: "limited athleticism"
+    deltas: { vertical_2k: -3, speed_2k: -3, agility_2k: -2 }
+  - phrase: "slow footed"
+    deltas: { speed_2k: -3, perimeter_defense_2k: -2 }
+  - phrase: "motor"
+    deltas: { hustle_2k: +3, offensive_rebound_2k: +2 }
+  - phrase: "high motor"
+    deltas: { hustle_2k: +4, offensive_rebound_2k: +2, defensive_consistency_2k: +2 }
+
+  # Shooting
+  - phrase: "elite shooter"
+    deltas: { three_point_shot_2k: +4, mid_range_shot_2k: +3, free_throws_2k: +2 }
+  - phrase: "knockdown shooter"
+    deltas: { three_point_shot_2k: +3, offensive_consistency_2k: +2 }
+  - phrase: "sharpshooter"
+    deltas: { three_point_shot_2k: +3, mid_range_shot_2k: +2 }
+  - phrase: "streaky shooter"
+    deltas: { three_point_shot_2k: -1, offensive_consistency_2k: -2 }
+  - phrase: "inconsistent shooter"
+    deltas: { three_point_shot_2k: -2, mid_range_shot_2k: -2, offensive_consistency_2k: -2 }
+  - phrase: "poor shooter"
+    deltas: { three_point_shot_2k: -3, mid_range_shot_2k: -3, free_throws_2k: -2 }
+  - phrase: "deep range"
+    deltas: { three_point_shot_2k: +2, shot_iq_2k: +1 }
+  - phrase: "range extends beyond"
+    deltas: { three_point_shot_2k: +2 }
+
+  # Playmaking / IQ
+  - phrase: "elite playmaker"
+    deltas: { pass_iq_2k: +3, pass_vision_2k: +3, ball_handle_2k: +2 }
+  - phrase: "high iq"
+    deltas: { shot_iq_2k: +2, pass_iq_2k: +2, help_defense_iq_2k: +2 }
+  - phrase: "high-iq"
+    deltas: { shot_iq_2k: +2, pass_iq_2k: +2, help_defense_iq_2k: +2 }
+  - phrase: "court vision"
+    deltas: { pass_vision_2k: +3, pass_iq_2k: +2 }
+  - phrase: "turnover prone"
+    deltas: { ball_handle_2k: -2, pass_accuracy_2k: -2 }
+  - phrase: "loose handle"
+    deltas: { ball_handle_2k: -3 }
+  - phrase: "primary ball handler"
+    deltas: { ball_handle_2k: +3, speed_with_ball_2k: +2 }
+
+  # Defense
+  - phrase: "elite defender"
+    deltas: { perimeter_defense_2k: +3, interior_defense_2k: +3, defensive_consistency_2k: +2 }
+  - phrase: "rim protector"
+    deltas: { block_2k: +4, interior_defense_2k: +3, help_defense_iq_2k: +2 }
+  - phrase: "shot blocker"
+    deltas: { block_2k: +3, interior_defense_2k: +2 }
+  - phrase: "switchable"
+    deltas: { perimeter_defense_2k: +2, interior_defense_2k: +1 }
+  - phrase: "switch defender"
+    deltas: { perimeter_defense_2k: +2, interior_defense_2k: +1 }
+  - phrase: "poor defender"
+    deltas: { perimeter_defense_2k: -3, defensive_consistency_2k: -3 }
+  - phrase: "lazy defender"
+    deltas: { defensive_consistency_2k: -3, help_defense_iq_2k: -2 }
+  - phrase: "disruptive"
+    deltas: { steal_2k: +2, pass_perception_2k: +2 }
+  - phrase: "ball hawk"
+    deltas: { steal_2k: +3, pass_perception_2k: +2 }
+
+  # Finishing / interior
+  - phrase: "rim finisher"
+    deltas: { driving_layup_2k: +3, driving_dunk_2k: +2 }
+  - phrase: "strong finisher"
+    deltas: { driving_layup_2k: +2, draw_foul_2k: +2 }
+  - phrase: "crafty finisher"
+    deltas: { driving_layup_2k: +2, shot_iq_2k: +1 }
+  - phrase: "bully ball"
+    deltas: { post_control_2k: +3, strength_2k: +2 }
+  - phrase: "post game"
+    deltas: { post_control_2k: +2, close_shot_2k: +1 }
+
+  # Intangibles
+  - phrase: "questionable work ethic"
+    deltas: { stamina_2k: -1, hustle_2k: -2, defensive_consistency_2k: -2 }
+  - phrase: "leadership"
+    deltas: { shot_iq_2k: +1, pass_iq_2k: +1, help_defense_iq_2k: +1 }
+  - phrase: "winning plays"
+    deltas: { help_defense_iq_2k: +2, hustle_2k: +1 }
+  - phrase: "competitive"
+    deltas: { hustle_2k: +2, defensive_consistency_2k: +1 }

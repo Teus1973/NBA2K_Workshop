@@ -1,0 +1,20 @@
+attribute: block_2k
+version: 1
+type: linear_regression
+features:
+- name: blk_per36
+  coef: 0.0
+- name: height_in
+  coef: 0.0
+- name: wingspan_in
+  coef: 0.0
+- name: max_vert_in
+  coef: 0.0
+intercept: 70.0
+clamp:
+- 25
+- 99
+r2: 0.0
+mae: 0.0
+n_samples: 24
+notes: ' (stub; n=24)'

@@ -1,0 +1,35 @@
+# NBA2K26 Rookie Rating Tool — runtime dependencies
+
+# UI + app shell
+streamlit>=1.30.0
+
+# HTTP + scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Stats + data
+pandas>=2.1.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+
+# NBA official stats + combine
+nba_api>=1.4.1
+
+# Config / serialization
+python-dotenv>=1.0.0
+PyYAML>=6.0
+
+# Excel export
+openpyxl>=3.1.2
+
+# Google Sheets export (reused credentials from SubtitleForge)
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.2.0
+
+# Scouting-report search (Requirement 4)
+duckduckgo-search>=6.0.0
+
+# Dev / testing
+pytest>=8.0.0

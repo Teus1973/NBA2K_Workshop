@@ -1,0 +1,20 @@
+attribute: defensive_rebound_2k
+version: 1
+type: linear_regression
+features:
+- name: dreb_per36
+  coef: 7.262637
+- name: height_in
+  coef: 0.17661
+- name: weight_lbs
+  coef: 0.008722
+- name: wingspan_in
+  coef: -0.157427
+intercept: 23.875609
+clamp:
+- 25
+- 99
+r2: 0.9656
+mae: 1.285
+n_samples: 29
+notes: ''

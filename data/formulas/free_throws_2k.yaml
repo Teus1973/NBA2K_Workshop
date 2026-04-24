@@ -1,0 +1,16 @@
+attribute: free_throws_2k
+version: 1
+type: linear_regression
+features:
+- name: ft_pct
+  coef: 86.009153
+- name: fta_per36
+  coef: 0.061409
+intercept: 10.606249
+clamp:
+- 25
+- 99
+r2: 0.826
+mae: 2.02
+n_samples: 362
+notes: ''

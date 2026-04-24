@@ -1,0 +1,18 @@
+attribute: close_shot_2k
+version: 1
+type: linear_regression
+features:
+- name: fg_pct
+  coef: 66.796646
+- name: fta_per36
+  coef: -1.180743
+- name: pts
+  coef: 0.807066
+intercept: 49.431198
+clamp:
+- 25
+- 99
+r2: 0.3399
+mae: 6.659
+n_samples: 362
+notes: ''

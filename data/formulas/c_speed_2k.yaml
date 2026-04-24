@@ -1,0 +1,17 @@
+attribute: c_speed_2k
+version: 1
+type: linear_regression
+features:
+- name: three_quarter_sprint_sec
+  coef: 0.0
+- name: weight_lbs
+  coef: 0.0
+intercept: 70.0
+clamp:
+- 25
+- 99
+r2: 0.0
+mae: 0.0
+n_samples: 24
+notes: Raw-drill-time -> 2K-scaled Speed rating; learned from current NBA combine
+  alumni whose 2K26 ratings we have. (stub; n=24)

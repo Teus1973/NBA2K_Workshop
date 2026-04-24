@@ -1,0 +1,20 @@
+attribute: ball_handle_2k
+version: 1
+type: linear_regression
+features:
+- name: ast_per36
+  coef: 4.36166
+- name: tov_per36
+  coef: -1.119577
+- name: is_pg
+  coef: 0.0
+- name: is_sg
+  coef: 0.0
+intercept: 56.257608
+clamp:
+- 25
+- 99
+r2: 0.306
+mae: 9.442
+n_samples: 362
+notes: ''
