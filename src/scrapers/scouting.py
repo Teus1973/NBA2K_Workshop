@@ -1,40 +1,60 @@
 """
 Scouting-report ingestion + keyword-based rating modulation.
 
-Two moving parts:
+1. **Blurbs** + **Ollama** synthesis — play style, pros, cons, and a **physical
+   traits** block, plus 0–1 ``*_01`` features (:class:`ScoutingSynthesis`).
+   Those features are stored on ``prospects`` and :mod:`formulas.apply` nudges
+   physical 2K ratings when combine numbers are not present. Text sources
+   include ESPN cache, optional Wikipedia, optional DuckDuckGo, and Ollama
+   (set ``NBA2K_WORKSHOP_USE_OLLAMA=0`` to disable LLM calls).
 
-1. ``fetch_blurbs(prospect)`` -- given a prospect slug / name, return a list of
-   scouting-report paragraphs. Primary source is the ESPN big-board HTML we
-   already cache; optional DuckDuckGo search (``duckduckgo-search`` package)
-   pulls 2-3 more blurbs per prospect from espn.com / nbadraft.net /
-   theringer.com / sports-reference.com.
-
-2. ``modulate_ratings(prospect, ratings, blurbs)`` -- apply the keyword table
-   at ``data/scouting_keywords.yaml`` to bump/nerf specific 2K attributes.
-   Every keyword hit writes a row to ``audit_log`` so the user can see which
-   phrase changed which rating.
+2. **Keyword modulation** — ``modulate_ratings`` applies ``data/scouting_keywords.yaml``
+   and logs each hit to ``audit_log``.
 """
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Iterable
 
+import requests
 import yaml
+from bs4 import BeautifulSoup
 
 from .. import audit, config
 from ..logger import get_logger
 from . import _http
+from . import espn_bigboard
 
 log = get_logger("scrapers.scouting")
 
+_OLLAMA_REACH_CACHE: tuple[float, bool] | None = None
+_OLLAMA_REACH_TTL_SEC = 30.0
 
 KEYWORDS_PATH = config.DATA_DIR / "scouting_keywords.yaml"
 
 
 # ---------------------------------------------------------------------------
+@dataclass
+class ScoutingSynthesis:
+    """AI scouting output: game summary + physical narrative + 0–1 feature hints."""
+
+    scouting_text: str
+    physical_text: str
+    features: dict[str, float] = field(default_factory=dict)
+    """Keys: ``strength_01``, ``leaping_01``, ``athleticism_01``, ``stamina_01``."""
+
+    @property
+    def full_text(self) -> str:
+        parts = [p for p in (self.scouting_text.strip(), self.physical_text.strip()) if p]
+        return "\n\n".join(parts)
+
+
 @dataclass
 class KeywordRule:
     phrase: str
@@ -75,8 +95,18 @@ def fetch_ddg_blurbs(query: str, *, max_results: int = 3) -> list[str]:
         log.info("duckduckgo-search not installed; skipping DDG scouting fetch")
         return []
     allowed_domains = (
-        "espn.com", "nbadraft.net", "theringer.com",
-        "sports-reference.com", "247sports.com",
+        "espn.com",
+        "nba.com",
+        "nbadraft.net",
+        "theringer.com",
+        "sports-reference.com",
+        "247sports.com",
+        "basketball-reference.com",
+        "theathletic.com",
+        "hoopshype.com",
+        "on3.com",
+        "sports.yahoo.com",
+        "si.com",
     )
     out: list[str] = []
     try:
@@ -93,46 +123,514 @@ def fetch_ddg_blurbs(query: str, *, max_results: int = 3) -> list[str]:
     return out
 
 
-def extract_espn_blurb(slug: str) -> str | None:
-    """Pull a prospect blurb from the cached ESPN big-board HTML.
+def fetch_ddg_prospect_blurbs(
+    full_name: str,
+    *,
+    pos: str | None = None,
+    school: str | None = None,
+    league: str | None = None,
+    max_blurbs: int = 10,
+) -> list[str]:
+    """Multiple targeted DDG queries (school, position, level) to reduce generic hits."""
+    name = (full_name or "").strip()
+    if len(name) < 2:
+        return []
+    pos_s = (pos or "").strip()
+    school_s = (school or "").strip()
+    league_s = (league or "").strip()
+    queries = [
+        f"{name} {school_s} NBA draft vertical athleticism speed explosiveness".strip(),
+        f"{name} {pos_s} {school_s} lateral quickness leaping first step".strip(),
+        f"{name} {school_s} NBA draft prospect analysis strengths weaknesses".strip(),
+        f"{name} {pos_s} {league_s or 'basketball'} draft scouting profile".strip(),
+        f"{name} NBA draft scouting report 2026 {pos_s} athletic",
+    ]
+    seen: set[str] = set()
+    out: list[str] = []
+    for q in queries:
+        q = re.sub(r"\s+", " ", q).strip()
+        if len(q) < 8:
+            continue
+        for b in fetch_ddg_blurbs(q, max_results=3):
+            key = b[:100].lower()
+            if not b or key in seen:
+                continue
+            seen.add(key)
+            out.append(b)
+            if len(out) >= max_blurbs:
+                return out
+    return out
 
-    Searches every cached ESPN HTML under ``data/cache/espn/`` for a sentence
-    containing the prospect's full name with enough prose (>60 chars) to be
-    worth using. Returns the longest match found, or ``None``.
+
+def format_listing_for_scouting(row: Mapping[str, Any]) -> str:
+    """Compact verified facts for the model (avoids 'unknown' when DB has name/rank/pos/size)."""
+    lines: list[str] = []
+    name = (str(row.get("full_name") or "")).strip() or "Prospect"
+    lines.append(f"Name: {name}")
+    rnk = row.get("espn_rank")
+    if rnk is not None and str(rnk).strip() != "":
+        try:
+            lines.append(f"ESPN big-board rank: {int(rnk)}")
+        except (TypeError, ValueError):
+            lines.append(f"ESPN big-board rank: {rnk}")
+    pos = (str(row.get("pos") or "")).strip()
+    if pos:
+        lines.append(f"Position: {pos}")
+    school = (str(row.get("school_or_team") or "")).strip()
+    if school:
+        lines.append(f"School / team: {school}")
+    le = (str(row.get("league") or "")).strip()
+    if le:
+        lines.append(f"League: {le}")
+    for label, col in (
+        ("Listed height", "height_in"),
+        ("Listed weight (lb)", "weight_lbs"),
+        ("Listed wingspan", "wingspan_in"),
+    ):
+        val = row.get(col)
+        if val is None or str(val).strip() == "":
+            continue
+        if col == "weight_lbs":
+            try:
+                lines.append(f"{label}: {int(float(val))}")
+            except (TypeError, ValueError):
+                pass
+        else:
+            try:
+                w = float(val)
+                ft = int(w // 12)
+                inch = int(round(w - ft * 12))
+                lines.append(f"{label}: {ft}'{inch}\"")
+            except (TypeError, ValueError):
+                pass
+    if len(lines) <= 1:
+        return ""
+    return "\n".join(lines)
+
+
+def _names_for_blurb(slug: str, full_name: str | None) -> list[str]:
+    names: list[str] = []
+    if full_name and str(full_name).strip():
+        names.append(str(full_name).strip())
+    name_parts = slug.replace("-", " ").split()
+    if len(name_parts) >= 2:
+        tt = " ".join(p.capitalize() for p in name_parts)
+        if not names or names[0].lower() != tt.lower():
+            names.append(tt)
+    return names
+
+
+def _name_key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def format_big_board_line(p: espn_bigboard.Prospect) -> str:
+    """Single ranked line as shown on the ESPN print big board."""
+    s = f"{p.rank}. {p.full_name}"
+    if p.pos:
+        s += f", {p.pos}"
+    if p.school_or_team:
+        s += f", {p.school_or_team}"
+    return s
+
+
+def big_board_line_from_html(html: str, slug: str, full_name: str | None) -> str | None:
+    """Return the one **player-specific** line from parsed big-board HTML, or ``None``."""
+    prospects = espn_bigboard.parse_bigboard_html(html)
+    key = _name_key(full_name or "")
+    skey = _name_key(slug.replace("-", " "))
+    for p in prospects:
+        if key and _name_key(p.full_name) == key:
+            return format_big_board_line(p)
+        if skey and _name_key(p.full_name) == skey:
+            return format_big_board_line(p)
+    return None
+
+
+def _is_article_boilerplate(block: str) -> bool:
+    """True for shared article intros, not per-prospect scouting."""
+    low = block.lower()
+    needles = (
+        "for the first time this cycle",
+        "there's a change at no",
+        "there is a change at no",
+        "best available",
+        "we're taking stock",
+        "nba draft big board",
+        "this week's",
+    )
+    return any(n in low for n in needles) and len(block) > 120
+
+
+def _wikipedia_extract_intro(title: str) -> str | None:
+    r = requests.get(
+        "https://en.wikipedia.org/w/api.php",
+        params={
+            "action": "query",
+            "format": "json",
+            "prop": "extracts",
+            "exintro": 1,
+            "explaintext": 1,
+            "titles": title,
+        },
+        timeout=15,
+        headers={"User-Agent": config.USER_AGENT},
+    )
+    r.raise_for_status()
+    data = r.json()
+    q = (data.get("query") or {}).get("pages") or {}
+    for _pid, page in q.items():
+        ex = page.get("extract")
+        if ex and str(ex).strip():
+            t = re.sub(r"\s+", " ", str(ex).strip())
+            if len(t) > 40:
+                return t[:2000] if len(t) > 2000 else t
+    return None
+
+
+def wikipedia_intro(full_name: str) -> str | None:
+    """First paragraph of the best-matching en.wikipedia.org article (if any)."""
+    q = (full_name or "").strip()
+    if len(q) < 3:
+        return None
+    for search in (f"{q} American basketball", q):
+        try:
+            r = requests.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "opensearch",
+                    "search": search,
+                    "limit": 1,
+                    "namespace": 0,
+                    "format": "json",
+                },
+                timeout=12,
+                headers={"User-Agent": config.USER_AGENT},
+            )
+            r.raise_for_status()
+            data = r.json()
+        except (OSError, requests.RequestException) as exc:  # noqa: BLE001
+            log.info("Wikipedia opensearch for %r failed: %s", search, exc)
+            continue
+        if len(data) < 2 or not data[1]:
+            continue
+        title = data[1][0]
+        intro = _wikipedia_extract_intro(title)
+        if intro:
+            return intro
+    return None
+
+
+def extract_espn_blurb(
+    slug: str,
+    full_name: str | None = None,
+) -> str | None:
+    """Pull a **per-player** line for ``full_name`` from cached ESPN ``*.html``.
+
+    Prefer the ranked list line (``1. Name, POS, School``) from
+    :func:`espn_bigboard.parse_bigboard_html` — the same as the main big-board
+    scraper. That avoids the shared *article* lede that names the No.1 pick but
+    applies to the whole page.
+
+    If no list line is found, we fall back to a short name-containing block, but
+    we drop long paragraphs that look like global article boilerplate.
     """
     if not config.CACHE_ESPN.is_dir():
         return None
-    name_parts = slug.replace("-", " ").split()
-    if len(name_parts) < 2:
+    names_to_try = _names_for_blurb(slug, full_name)
+    if not names_to_try:
         return None
-    full_name = " ".join(p.capitalize() for p in name_parts)
+
+    for fp in config.CACHE_ESPN.glob("*.html"):
+        try:
+            text = fp.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        tlow = text.lower()
+        if not any(n and n.lower() in tlow for n in names_to_try):
+            continue
+        line = big_board_line_from_html(text, slug, full_name)
+        if line:
+            return line
+
     best: str | None = None
     for fp in config.CACHE_ESPN.glob("*.html"):
         try:
             text = fp.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        if full_name.lower() not in text.lower():
-            continue
-        for m in re.finditer(
-            r"([^<>]{60,400}?" + re.escape(full_name) + r"[^<>]{10,400}?\.)",
-            text, re.IGNORECASE,
-        ):
-            blurb = m.group(1).strip()
-            if best is None or len(blurb) > len(best):
-                best = blurb
+        tlow = text.lower()
+        for nm in names_to_try:
+            if not nm or nm.lower() not in tlow:
+                continue
+            esc = re.escape(nm)
+            for m in re.finditer(
+                r"([^<>]{30,500}?" + esc + r"[^<>]{5,500}?\.)",
+                text, re.IGNORECASE,
+            ):
+                blurb = m.group(1).strip()
+                if _is_article_boilerplate(blurb):
+                    continue
+                if best is None or len(blurb) > len(best):
+                    best = blurb
+        try:
+            soup = BeautifulSoup(text, "lxml")
+        except Exception:  # noqa: BLE001
+            soup = BeautifulSoup(text, "html.parser")
+        for nm in names_to_try:
+            if not nm or nm.lower() not in tlow:
+                continue
+            for tag in soup.find_all(["p", "li", "td", "h2", "h3", "h4"]):
+                block = tag.get_text(" ", strip=True)
+                if not block or nm.lower() not in block.lower():
+                    continue
+                if len(block) < 10 or len(block) > 3000:
+                    continue
+                if _is_article_boilerplate(block):
+                    continue
+                if best is None or len(block) > len(best):
+                    best = block
     return best
 
 
-# ---------------------------------------------------------------------------
-def fetch_blurbs(slug: str, full_name: str, *,
-                 use_duckduckgo: bool = False) -> list[str]:
+def ollama_server_reachable() -> bool:
+    """True if something is listening on ``config.OLLAMA_HOST`` (fast probe)."""
+    global _OLLAMA_REACH_CACHE
+    if not config.USE_OLLAMA:
+        return False
+    now = time.monotonic()
+    if _OLLAMA_REACH_CACHE is not None:
+        ts, ok = _OLLAMA_REACH_CACHE
+        if now - ts < _OLLAMA_REACH_TTL_SEC:
+            return ok
+    url = f"{config.OLLAMA_HOST.rstrip('/')}/api/tags"
+    try:
+        r = requests.get(url, timeout=2.5)
+        ok = r.status_code == 200
+    except (OSError, requests.RequestException):
+        ok = False
+    _OLLAMA_REACH_CACHE = (now, ok)
+    return ok
+
+
+_PHYSICAL_JSON_KEYS = (
+    "strength_01", "leaping_01", "athleticism_01", "stamina_01",
+)
+
+
+def _extract_scouting_json_obj(raw: str) -> dict[str, float] | None:
+    tag = "SCOUTING_PHYSICAL_JSON"
+    if tag not in raw and tag.lower() not in raw.lower():
+        return None
+    i = raw.lower().rfind("scouting_physical_json")
+    if i < 0:
+        return None
+    j = raw.find("{", i)
+    if j < 0:
+        return None
+    depth = 0
+    for k in range(j, len(raw)):
+        if raw[k] == "{":
+            depth += 1
+        elif raw[k] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    blob = json.loads(raw[j : k + 1])
+                except (TypeError, ValueError):
+                    return None
+                if not isinstance(blob, dict):
+                    return None
+                out: dict[str, float] = {}
+                for key in _PHYSICAL_JSON_KEYS:
+                    if key not in blob:
+                        continue
+                    try:
+                        v = float(blob[key])
+                    except (TypeError, ValueError):
+                        continue
+                    out[key] = max(0.0, min(1.0, v))
+                return out or None
+    return None
+
+
+def split_scouting_synthesis_text(raw: str) -> tuple[str, str, dict[str, float]]:
+    """Split model output into game summary, physical blurb, and JSON features."""
+    features = _extract_scouting_json_obj(raw) or {}
+    i = re.search(r"SCOUTING_PHYSICAL_JSON", raw, re.IGNORECASE)
+    pre = raw[: i.start()] if i else raw
+    phys_match = re.search(
+        r"(?is)Physical traits[^:]*:\s*(.*?)(?=\n\s*SCOUTING_PHYSICAL_JSON|\Z)",
+        pre,
+    )
+    if phys_match:
+        physical_text = phys_match.group(1).strip()
+        head = re.sub(
+            r"(?is)Physical traits[^:]*:.*$",
+            "",
+            pre,
+        ).strip()
+    else:
+        physical_text, head = "", pre.strip()
+    if len(head) < 5:
+        head = pre.strip()
+    return head, physical_text, features
+
+
+def synthesize_scouting_with_ollama(
+    player_name: str,
+    context: str,
+    *,
+    listing: str | None = None,
+) -> ScoutingSynthesis | None:
+    """Rewrite ``context`` into scouting notes + physical summary + 0–1 features.
+
+    Respects :data:`config.USE_OLLAMA`, :data:`config.OLLAMA_HOST`, and
+    :data:`config.OLLAMA_MODEL`. Returns ``None`` if disabled, on HTTP errors,
+    or on empty/invalid responses. Call :func:`ollama_server_reachable` first
+    to avoid slow failures when nothing is running.
+    """
+    if not config.USE_OLLAMA:
+        return None
+    list_block = (listing or "").strip()
+    ctx = (context or "").strip()
+    if list_block and ctx:
+        combined_for_len = f"{list_block}\n{ctx}"
+    else:
+        combined_for_len = list_block or ctx
+    if len(combined_for_len) < 8:
+        return None
+    if ctx and list_block:
+        user_blob = (
+            f"{list_block}\n\n---\n"
+            f"Source text (ESPN / web; may be short):\n{ctx[:8000]}\n"
+        )
+    elif list_block:
+        user_blob = f"{list_block}\n(Additional source text was minimal.)\n"
+    else:
+        user_blob = f"Source text:\n{ctx[:8000]}\n"
+    name = (player_name or "This prospect").strip() or "This prospect"
+    url = f"{config.OLLAMA_HOST.rstrip('/')}/api/chat"
+    body = {
+        "model": config.OLLAMA_MODEL,
+        "stream": False,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You write short NBA draft scouting notes. Use the **Workshop listing** (if "
+                    "given) and any source text. Do not hedge with 'unknown', 'undisclosed', "
+                    "'TBD', or 'insufficient data' as filler sentences. When a fact is in the "
+                    "listing (rank, school, size, position), treat it as confirmed. If outside "
+                    "scouting is thin, infer *reasonable* guard/big archetype language from "
+                    "position and size, and one sentence that sources are limited. "
+                    "The JSON line must be present exactly as specified."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Player: {name}\n\n"
+                    f"{user_blob}\n"
+                    "Reply in plain text only, under 220 words, with exactly these "
+                    "headings on their own lines (no markdown, no # symbols):\n"
+                    "Play style:\n"
+                    "Pros:\n"
+                    "Cons:\n"
+                    "Physical traits:\n"
+                    "Write 4–6 short lines. You must include: (1) one line that starts with "
+                    "the words 'Athletic profile:' and states plainly whether the player is "
+                    "typically described as a plus, above-average, average, below-average, or limited "
+                    "athlete (explosiveness, quickness) vs draft peers, based on the sources; "
+                    "(2) strength; (3) leaping/vertical; (4) speed/lateral quickness; "
+                    "(5) conditioning/motor; (6) frame if relevant. If sources conflict, say so briefly.\n"
+                    "After that, on its own line, print exactly this tag:\n"
+                    "SCOUTING_PHYSICAL_JSON\n"
+                    "Then a single line of JSON (no other text) with four numbers 0.0 to 1.0:\n"
+                    '{"strength_01":0.0,"leaping_01":0.0,'
+                    '"athleticism_01":0.0,"stamina_01":0.0}\n'
+                    "Use decimals (e.g. 0.55). Calibrate: 0.5 = average for draft-level prospects. "
+                    "If a trait is not evidenced in the text, use ~0.45–0.55, not 0.0. "
+                    "0.8+ = elite in that area only if sources support it."
+                ),
+            },
+        ],
+    }
+    try:
+        r = requests.post(url, json=body, timeout=120)
+        r.raise_for_status()
+        data = r.json() if r.content else {}
+    except (OSError, requests.RequestException, ValueError) as exc:  # noqa: BLE001
+        log.warning("Ollama scouting synthesis failed: %s", exc)
+        return None
+    msg = (data.get("message") or {}) if isinstance(data, dict) else {}
+    text = (msg.get("content") or "").strip()
+    if not text or len(text) < 20:
+        return None
+    text = text[:5000] if len(text) > 5000 else text
+    head, physical, feats = split_scouting_synthesis_text(text)
+    if not head and not physical:
+        return None
+    return ScoutingSynthesis(
+        scouting_text=head or text,
+        physical_text=physical,
+        features=feats,
+    )
+
+
+def collect_prospect_blurbs(
+    slug: str,
+    full_name: str,
+    *,
+    use_wikipedia: bool = False,
+    use_duckduckgo: bool = False,
+    pos: str | None = None,
+    school: str | None = None,
+    league: str | None = None,
+) -> tuple[list[str], str]:
+    """Gather blurbs and a short source label for the Scouting tab."""
     blurbs: list[str] = []
-    espn = extract_espn_blurb(slug)
+    parts: list[str] = []
+    espn = extract_espn_blurb(slug, full_name=full_name or None)
     if espn:
         blurbs.append(espn)
-    if use_duckduckgo:
-        blurbs.extend(fetch_ddg_blurbs(f"{full_name} NBA draft scouting report"))
+        parts.append("ESPN cache")
+    if use_wikipedia and full_name:
+        w = wikipedia_intro(full_name)
+        if w:
+            blurbs.append(w)
+            parts.append("Wikipedia")
+    if use_duckduckgo and full_name:
+        d = fetch_ddg_prospect_blurbs(
+            full_name,
+            pos=pos,
+            school=school,
+            league=league,
+        )
+        for b in d:
+            if b and b not in blurbs:
+                blurbs.append(b)
+        if d:
+            parts.append("Web (DDG)")
+    label = " + ".join(parts) if parts else "—"
+    return blurbs, label
+
+
+# ---------------------------------------------------------------------------
+def fetch_blurbs(
+    slug: str,
+    full_name: str,
+    *,
+    use_duckduckgo: bool = False,
+    use_wikipedia: bool = False,
+) -> list[str]:
+    """Backward-compatible blurb list (no source label)."""
+    blurbs, _ = collect_prospect_blurbs(
+        slug,
+        full_name,
+        use_wikipedia=use_wikipedia,
+        use_duckduckgo=use_duckduckgo,
+    )
     return blurbs
 
 

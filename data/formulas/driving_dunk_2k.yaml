@@ -3,16 +3,16 @@ version: 1
 type: linear_regression
 features:
 - name: max_vert_in
-  coef: 0.0
+  coef: 1.497224
 - name: weight_lbs
-  coef: 0.0
+  coef: 0.208018
 - name: wingspan_minus_height
-  coef: 0.0
-intercept: 70.0
+  coef: 0.412091
+intercept: -28.907476
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.2183
+mae: 8.058
+n_samples: 193
+notes: ''

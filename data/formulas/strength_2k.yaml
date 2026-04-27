@@ -3,18 +3,18 @@ version: 1
 type: linear_regression
 features:
 - name: weight_lbs
-  coef: -1.910287
+  coef: 0.651689
 - name: height_in
-  coef: 11.197531
+  coef: -1.848038
 - name: bmi
-  coef: 19.205865
+  coef: -2.741857
 - name: wingspan_in
-  coef: 1.320728
-intercept: -989.77798
+  coef: 0.889221
+intercept: 60.268114
 clamp:
 - 25
 - 99
-r2: 0.451
-mae: 5.263
-n_samples: 29
+r2: 0.6121
+mae: 6.244
+n_samples: 239
 notes: ''

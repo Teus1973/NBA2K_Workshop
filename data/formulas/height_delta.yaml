@@ -3,10 +3,10 @@ version: 1
 type: piecewise
 deltas:
   SF:
-    mean: 0.576
+    mean: 0.578
     median: 0.5
-    n: 33
-default_delta: 0.576
+    n: 258
+default_delta: 0.578
 notes: Average of (NBA listed height - combine wo_shoes height) by position bucket.
   Applied to prospect combine heights.
-n_samples: 33
+n_samples: 258

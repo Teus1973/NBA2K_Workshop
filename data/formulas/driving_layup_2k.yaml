@@ -3,18 +3,18 @@ version: 1
 type: linear_regression
 features:
 - name: fg_pct
-  coef: 0.0
+  coef: -14.939372
 - name: fta_per36
-  coef: 0.0
+  coef: 2.36996
 - name: max_vert_in
-  coef: 0.0
+  coef: 0.172903
 - name: weight_lbs
-  coef: 0.0
-intercept: 70.0
+  coef: -0.119203
+intercept: 98.148079
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.3894
+mae: 4.687
+n_samples: 193
+notes: ''

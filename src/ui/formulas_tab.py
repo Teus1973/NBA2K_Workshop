@@ -12,7 +12,8 @@ import pandas as pd
 import streamlit as st
 import yaml
 
-from .. import audit, config, db
+from .. import audit, bulk_recalc, config, db
+from ..exporters import data_loader
 from ..formulas import registry as _registry
 from . import common
 
@@ -80,9 +81,12 @@ def _save_yaml(attribute: str, yaml_text: str, note: str = "") -> int:
 
 def render() -> None:
     st.header("Formulas")
+    eng = config.get_rating_engine()
     st.caption(
-        "Every 2K attribute has a YAML formula. Edit coefficients, clamp, or "
-        "notes below; save bumps the version and audit-logs the change."
+        f"Active **rating engine**: `{eng}` (change at the top of the app). "
+        "Every 2K attribute has a YAML formula for the **Calibrated** engine; "
+        "the **Excel 2026** engine uses these YAMLs for **overall_2k** only. "
+        "Edits here affect calibrated attributes and overall weights."
     )
 
     df = common.formulas_df()
@@ -123,40 +127,28 @@ def render() -> None:
             st.error(f"Save failed: {exc}")
 
     if col_recalc.button("Recalculate all prospect ratings"):
-        from .. import audit as _audit
-        from ..formulas import apply as fapply
-        from ..exporters import data_loader
-        reg = _registry.load_registry()
-        conn = db.connect()
-        try:
-            pros = data_loader.load_prospects_df(conn=conn)
-            n = 0
-            for _, row in pros.iterrows():
-                ratings, _prov = fapply.apply_to_prospect(
-                    row.to_dict(), reg)
-                placeholders = ", ".join(["?"] * (1 + len(config.RATING_ATTRIBUTES) + 2))
-                values = [row["slug"]] + [
-                    ratings.get(a) for a in config.RATING_ATTRIBUTES
-                ] + [1, None]  # formula_version, manual_override_json
-                cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-                    "formula_version", "manual_override_json"]
-                sql = (
-                    f"INSERT INTO prospect_ratings_computed "
-                    f"({', '.join(cols)}) VALUES ({placeholders}) "
-                    f"ON CONFLICT(slug) DO UPDATE SET "
-                    + ", ".join(f"{c}=excluded.{c}" for c in cols[1:])
+        prog = st.empty()
+        def _rc(i: int, total: int, slug: str) -> None:
+            try:
+                prog.progress(
+                    i / max(total, 1),
+                    text=f"Recomputing [{i}/{total}] {slug}…",
                 )
-                conn.execute(sql, values)
-                n += 1
-        finally:
-            conn.close()
-        _audit.log_event(
-            action="rating_recalc",
-            entity_type="prospect",
-            note=f"bulk recalc: {n} prospects",
-        )
-        common.bust_cache()
-        st.success(f"Recomputed ratings for {n} prospects.")
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            with st.spinner("Recomputing all prospect ratings…"):
+                n = bulk_recalc.recompute_prospect_ratings(
+                    progress_cb=_rc, audit_note="formulas",
+                )
+            prog.empty()
+        except Exception as exc:  # noqa: BLE001
+            prog.empty()
+            st.error(f"Recompute failed: {exc}")
+            st.exception(exc)
+        else:
+            common.bust_cache()
+            st.success(f"Recomputed ratings for {n} prospects.")
 
     st.subheader("Version history")
     conn = db.connect()
@@ -167,7 +159,10 @@ def render() -> None:
             conn, params=[attribute])
     finally:
         conn.close()
-    st.dataframe(hist, use_container_width=True)
+    st.dataframe(
+        data_loader.round_float_columns_for_display(hist),
+        use_container_width=True,
+    )
 
     rollback_v = st.number_input(
         "Rollback to version", min_value=1,

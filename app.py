@@ -39,6 +39,10 @@ def main() -> None:
     st.sidebar.caption(f"Prospect target: **{config.PROSPECT_TARGET}**")
     common.render_db_stats()
 
+    main_top = st.container()
+    with main_top:
+        common.render_main_rating_engine()
+
     tabs = st.tabs([
         "Reference", "Prospects", "Scouting",
         "Europeans", "Formulas", "Logs", "Settings",

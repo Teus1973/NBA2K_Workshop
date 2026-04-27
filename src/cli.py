@@ -83,34 +83,9 @@ def refit_formulas() -> None:
 
 
 def recalc_ratings() -> None:
-    from .exporters import data_loader
-    from .formulas import apply as fapply, registry as _reg
-    reg = _reg.load_registry()
-    df = data_loader.load_prospects_df()
-    conn = db.connect()
-    try:
-        n = 0
-        for _, row in df.iterrows():
-            ratings, _prov = fapply.apply_to_prospect(row.to_dict(), reg)
-            cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-                "formula_version", "manual_override_json"]
-            values = [row["slug"]] + [ratings.get(a) for a in config.RATING_ATTRIBUTES] + [1, None]
-            placeholders = ", ".join(["?"] * len(cols))
-            sql = (
-                f"INSERT INTO prospect_ratings_computed ({', '.join(cols)}) "
-                f"VALUES ({placeholders}) "
-                f"ON CONFLICT(slug) DO UPDATE SET "
-                + ", ".join(f"{c}=excluded.{c}" for c in cols[1:])
-            )
-            conn.execute(sql, values)
-            n += 1
-    finally:
-        conn.close()
-    audit.log_event(
-        action="rating_recalc",
-        entity_type="prospect",
-        note=f"cli recalc: {n} prospects",
-    )
+    from . import bulk_recalc
+
+    n = bulk_recalc.recompute_prospect_ratings(audit_note="cli")
     log.info("recalc_ratings: %d prospects", n)
 
 

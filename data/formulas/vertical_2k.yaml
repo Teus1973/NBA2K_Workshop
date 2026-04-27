@@ -3,16 +3,16 @@ version: 1
 type: linear_regression
 features:
 - name: max_vert_in
-  coef: 0.0
+  coef: 2.471725
 - name: weight_lbs
-  coef: 0.0
+  coef: -0.035021
 - name: height_in
-  coef: 0.0
-intercept: 70.0
+  coef: 0.371325
+intercept: -33.849227
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: Combine override applies when c_vertical_2k is present. (stub; n=24)
+r2: 0.6231
+mae: 4.766
+n_samples: 193
+notes: Combine override applies when c_vertical_2k is present.

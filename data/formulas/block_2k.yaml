@@ -3,18 +3,18 @@ version: 1
 type: linear_regression
 features:
 - name: blk_per36
-  coef: 0.0
+  coef: 25.013198
 - name: height_in
-  coef: 0.0
+  coef: -0.083536
 - name: wingspan_in
-  coef: 0.0
+  coef: 0.308558
 - name: max_vert_in
-  coef: 0.0
-intercept: 70.0
+  coef: 0.085425
+intercept: 15.470266
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.9168
+mae: 3.179
+n_samples: 194
+notes: ''

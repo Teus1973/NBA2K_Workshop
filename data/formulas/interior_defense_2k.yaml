@@ -3,20 +3,20 @@ version: 1
 type: linear_regression
 features:
 - name: blk_per36
-  coef: 9.298997
+  coef: 2.643707
 - name: dreb_per36
-  coef: -0.554754
+  coef: 0.880364
 - name: height_in
-  coef: -1.792805
+  coef: 0.095267
 - name: wingspan_in
-  coef: 2.81405
+  coef: 1.677534
 - name: weight_lbs
-  coef: 0.048182
-intercept: -45.395665
+  coef: 0.170887
+intercept: -129.043191
 clamp:
 - 25
 - 99
-r2: 0.4039
-mae: 8.622
-n_samples: 29
+r2: 0.5699
+mae: 8.364
+n_samples: 239
 notes: ''

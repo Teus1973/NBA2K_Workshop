@@ -3,16 +3,16 @@ version: 1
 type: linear_regression
 features:
 - name: three_quarter_sprint_sec
-  coef: 0.0
+  coef: -59.761279
 - name: weight_lbs
-  coef: 0.0
+  coef: -0.1226
 - name: height_in
-  coef: 0.0
-intercept: 70.0
+  coef: -0.552704
+intercept: 338.273241
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: Combine override applies when c_speed_2k is present. (stub; n=24)
+r2: 0.7513
+mae: 4.314
+n_samples: 195
+notes: Combine override applies when c_speed_2k is present.

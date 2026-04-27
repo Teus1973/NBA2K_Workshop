@@ -3,15 +3,15 @@ version: 1
 type: linear_regression
 features:
 - name: three_quarter_sprint_sec
-  coef: 0.0
+  coef: -61.582448
 - name: weight_lbs
-  coef: 0.0
-intercept: 70.0
+  coef: -0.171284
+intercept: 311.301278
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
+r2: 0.7424
+mae: 4.362
+n_samples: 195
 notes: Raw-drill-time -> 2K-scaled Speed rating; learned from current NBA combine
-  alumni whose 2K26 ratings we have. (stub; n=24)
+  alumni whose 2K26 ratings we have.

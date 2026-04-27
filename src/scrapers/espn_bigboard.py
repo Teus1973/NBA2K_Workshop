@@ -49,6 +49,8 @@ class Prospect:
     height_in: float | None = None
     weight_lbs: float | None = None
     age: float | None = None
+    date_of_birth: str | None = None
+    """ISO date string ``YYYY-MM-DD``; optional for seed/scrape sources."""
     league: str = config.LEAGUE_NCAA
     source: str = "espn_big_board"
     notes: str | None = None
@@ -248,9 +250,9 @@ def upsert_prospects(conn, prospects: Iterable[Prospect]) -> int:
             """
             INSERT INTO prospects
                 (slug, first_name, last_name, full_name, pos, school_or_team,
-                 league, age, height_in, weight_lbs, espn_rank, status,
-                 added_by, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'system', ?)
+                 league, age, height_in, weight_lbs, espn_rank, date_of_birth,
+                 status, added_by, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'system', ?)
             ON CONFLICT(slug) DO UPDATE SET
                 first_name    =excluded.first_name,
                 last_name     =excluded.last_name,
@@ -263,11 +265,13 @@ def upsert_prospects(conn, prospects: Iterable[Prospect]) -> int:
                 height_in     =COALESCE(excluded.height_in, prospects.height_in),
                 weight_lbs    =COALESCE(excluded.weight_lbs, prospects.weight_lbs),
                 espn_rank     =COALESCE(excluded.espn_rank, prospects.espn_rank),
+                date_of_birth =COALESCE(
+                    excluded.date_of_birth, prospects.date_of_birth),
                 updated_at    =strftime('%Y-%m-%dT%H:%M:%fZ','now')
             """,
             (p.slug, p.first_name, p.last_name, p.full_name, p.pos,
              p.school_or_team, p.league, p.age, p.height_in, p.weight_lbs,
-             p.rank, p.notes),
+             p.rank, p.date_of_birth, p.notes),
         )
         n += 1
     return n

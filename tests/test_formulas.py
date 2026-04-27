@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from src import config
 from src.formulas import apply as fapply
 from src.formulas import registry as _registry
+
+
+@pytest.fixture(autouse=True)
+def _force_calibrated_rating_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests use a tmp YAML registry; :func:`config.get_rating_engine` must
+    not follow the user’s UI choice (e.g. Excel 2026) from on-disk settings."""
+    monkeypatch.setattr(config, "get_rating_engine", lambda: "calibrated")
 
 
 def _write_yaml(tmp_path: Path, name: str, blob: dict) -> None:

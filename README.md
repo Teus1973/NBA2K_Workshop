@@ -1,8 +1,10 @@
-**Last updated: 2026-04-24**
+**Last updated: 2026-04-28**
 
 # NBA2K26 Rookie Rating Tool
 
 A local, personal-use Streamlit tool that estimates **NBA 2K26** ratings for the **top 120 prospects of the 2026 NBA Draft**. It scrapes `2kratings.com` and `nba.com/stats` to build a calibration corpus of currently rostered NBA players, fits transparent per-attribute regression formulas (viewable and editable in the UI), and applies those formulas to each prospect using their college / international stats and (post-combine) official NBA Draft Combine measurements.
+
+**Rating engines (sidebar):** use **Calibrated** for YAML / linear models trained on the NBA reference set, or **Excel 2026 class** for the same structural logic as the `2026 class` sheet in the project workbook (plus a tuned overall from YAML). Switching engines requires a **recompute** (Settings or Formulas) to refresh `prospect_ratings_computed`.
 
 > **Runs 100% locally.** No cloud, no paid APIs, no user accounts. Free sources only (2kratings, nba.com, espn.com, sports-reference.com, proballers.com, duckduckgo).
 
@@ -57,11 +59,12 @@ Tweak the launcher with env vars (in `.env` or your shell):
 The app opens at `http://localhost:8506` with the following tabs:
 
 - **Reference** — current NBA players with 2025-26 stats, combine measurements, and scraped 2K26 ratings (ground-truth dataset).
-- **Prospects** — 120 prospects of the 2026 Draft with estimated 2K26 ratings (add / remove / override).
+- **Prospects** — 2026 draft prospects with estimated 2K26 ratings (add / remove / override). Numeric stat columns are shown with **two decimal places** in the table.
+- **Scouting** — ESPN lines plus optional local **Ollama** write-ups; **Save to database** (or **Auto-save new AI scouting**, on by default) persists text to SQLite so a browser reload keeps your work. Recompute ratings after saving if formulas use scouting hints.
 - **Europe** — (Phase 2) Euroleague players with the same rating schema.
-- **Formulas** — live YAML editor for every rating formula with fit metrics and rollback.
+- **Formulas** — live YAML editor for every rating formula (Calibrated engine) with fit metrics and rollback; **Recalculate** runs a **fast bulk write** (one SQLite transaction, throttled progress).
 - **Logs** — append-only change log (stat refreshes, rating recalcs, user edits).
-- **Settings** — scrape refresh, CSV/XLSX upload, Excel / Google Sheets export.
+- **Settings** — scrape refresh, **Recompute prospect ratings** (same batched path), CSV/XLSX upload, Excel / Google Sheets export, full pipeline.
 
 ---
 
@@ -86,13 +89,13 @@ NBA2K_Workshop\
     user_uploads\              your CSV/XLSX imports
     exports\                   generated .xlsx files
   src\
-    config.py, logger.py, db.py, audit.py
+    config.py, logger.py, db.py, audit.py, bulk_recalc.py, scouting_persist.py
     scrapers\{twokratings,nba_stats,nba_combine,espn_bigboard,
               sports_reference_cbb,international,scouting}.py
     calibration\{build_corpus,fit_formulas,evaluate}.py
-    formulas\{registry,apply}.py
-    exporters\{excel_writer,gsheets_writer}.py
-    ui\{reference_tab,prospects_tab,europe_tab,formulas_tab,
+    formulas\{registry,apply,excel_2026_class}.py
+    exporters\{excel_writer,gsheets_writer,data_loader}.py
+    ui\{reference_tab,prospects_tab,scouting_tab,europe_tab,formulas_tab,
         logs_tab,settings_tab}.py
   tests\
 ```

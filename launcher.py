@@ -31,9 +31,19 @@ from pathlib import Path
 
 
 def _resolve_project_dir() -> Path:
-    """sys.executable is the .exe when frozen; __file__ otherwise."""
+    """When frozen, find the workshop root (``app.py`` + ``venv``), not only the .exe folder.
+
+    Supports **onefile** (exe next to ``app.py``) and **onedir** (exe in a subfolder like
+    ``LaunchNBA2KWorkshop/LaunchNBA2KWorkshop.exe``).
+    """
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        here = Path(sys.executable).resolve().parent
+        for cand in (here, here.parent, here.parent.parent):
+            app = cand / "app.py"
+            vpy = cand / "venv" / "Scripts" / "python.exe"
+            if app.is_file() and vpy.is_file():
+                return cand
+        return here
     return Path(__file__).resolve().parent
 
 

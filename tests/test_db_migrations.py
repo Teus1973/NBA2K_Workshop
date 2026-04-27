@@ -45,6 +45,20 @@ def test_connect_is_idempotent(tmp_path, monkeypatch):
         c2.close()
 
 
+def test_prospects_date_of_birth_migrated(temp_db):
+    cur = temp_db.execute("PRAGMA table_info(prospects)")
+    cols = {row[1] for row in cur.fetchall()}
+    assert "date_of_birth" in cols
+
+
+def test_prospects_scouting_columns_migrated(temp_db):
+    cur = temp_db.execute("PRAGMA table_info(prospects)")
+    cols = {row[1] for row in cur.fetchall()}
+    assert "scouting_ai_summary" in cols
+    assert "scouting_physical_text" in cols
+    assert "scouting_physical_json" in cols
+
+
 def test_audit_log_insert(temp_db):
     from src import audit
     rid = audit.log_event(

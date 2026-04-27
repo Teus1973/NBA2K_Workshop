@@ -20,6 +20,19 @@ from ..scrapers import twokratings as _twok
 log = get_logger("exporters.data_loader")
 
 
+def round_float_columns_for_display(
+    df: pd.DataFrame, *, ndigits: int = 2
+) -> pd.DataFrame:
+    """Round float columns for Streamlit tables and CSV export consistency."""
+    if df.empty:
+        return df
+    out = df.copy()
+    for c in out.columns:
+        if pd.api.types.is_float_dtype(out[c]):
+            out[c] = out[c].round(ndigits)
+    return out
+
+
 # ---------------------------------------------------------------------------
 def nba_roster_match_sets(conn: sqlite3.Connection) -> tuple[set[str], set[str]]:
     """Slugs + normalized full names for current ``nba_players`` rows."""
@@ -166,7 +179,7 @@ def load_reference_df(
     ) if c in df.columns]
     order = [c for c in front if c in df.columns] + rating_cols + stat_cols + combine_cols
     rest = [c for c in df.columns if c not in order]
-    return df[order + rest]
+    return round_float_columns_for_display(df[order + rest])
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +258,7 @@ def load_prospects_df(
 
     front = [
         "espn_rank", "slug", "last_name", "first_name", "pos",
-        "school_or_team", "league", "age", "height_in", "height_ft",
+        "school_or_team", "league", "age", "date_of_birth", "height_in", "height_ft",
         "weight_lbs", "wingspan_in", "status",
     ]
     rating_cols = [c for c in config.RATING_ATTRIBUTES if c in df.columns]
@@ -266,7 +279,7 @@ def load_prospects_df(
     out = df[order + rest].copy()
     if "espn_rank" in out.columns:
         out = out.sort_values("espn_rank", na_position="last")
-    return out
+    return round_float_columns_for_display(out)
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +297,7 @@ def load_audit_df(
     finally:
         if own:
             conn.close()
-    return df
+    return round_float_columns_for_display(df)
 
 
 def load_formulas_df(
@@ -306,4 +319,4 @@ def load_formulas_df(
     finally:
         if own:
             conn.close()
-    return df
+    return round_float_columns_for_display(df)

@@ -12,15 +12,15 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from .. import audit, config, db
-from ..exporters import excel_writer, gsheets_writer
+from .. import audit, bulk_recalc, config, db
+from ..exporters import data_loader, excel_writer, gsheets_writer
 from . import common
 
 
 REQUIRED_UPLOAD_COLS = {"full_name"}
 OPTIONAL_UPLOAD_COLS = {
-    "rank", "pos", "school_or_team", "league", "age", "height_in",
-    "weight_lbs", "wingspan_in", "notes",
+    "rank", "pos", "school_or_team", "league", "age", "date_of_birth",
+    "height_in", "weight_lbs", "wingspan_in", "notes",
 }
 
 
@@ -31,13 +31,31 @@ def _parse_upload(file) -> pd.DataFrame:
     return pd.read_csv(file)
 
 
+def _scrape_sports_reference_cbb(
+    progress_placeholder,
+) -> dict[str, int | str]:
+    from ..scrapers import sports_reference_cbb as cbb
+
+    def _cb(i: int, total: int, slug: str, status: str) -> None:
+        if progress_placeholder is not None and total:
+            try:
+                progress_placeholder.progress(
+                    i / max(total, 1),
+                    text=f"[{i}/{total}] {slug}: {status}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+    return cbb.bulk_scrape_ncaa_prospects(progress_cb=_cb)
+
+
 def _db_stats() -> dict[str, int]:
     conn = db.connect()
     try:
         out = {}
         for t in ("nba_players", "nba_stats_season", "nba_ratings_2k26",
-                  "prospects", "prospect_ratings_computed", "formulas",
-                  "audit_log"):
+                  "prospects", "prospect_stats", "prospect_ratings_computed",
+                  "formulas", "audit_log"):
             out[t] = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
     finally:
         conn.close()
@@ -47,8 +65,6 @@ def _db_stats() -> dict[str, int]:
 def _run_bootstrap(progress_placeholder) -> None:
     """Run the full first-time pipeline with live progress updates."""
     from ..calibration import fit_formulas
-    from ..exporters import data_loader
-    from ..formulas import apply as fapply, registry as _reg
     from ..scrapers import espn_bigboard, nba_combine, nba_stats, twokratings
 
     log = st.session_state.setdefault("_bootstrap_log", [])
@@ -110,31 +126,7 @@ def _run_bootstrap(progress_placeholder) -> None:
     tick(f"     ok: {fitted}/{len(fit_results)} formulas trained")
 
     tick("7/7  Recomputing prospect ratings...")
-    reg = _reg.load_registry()
-    pros = data_loader.load_prospects_df()
-    conn = db.connect()
-    try:
-        n_recalc = 0
-        for _, row in pros.iterrows():
-            ratings, _prov = fapply.apply_to_prospect(row.to_dict(), reg)
-            cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-                "formula_version", "manual_override_json"]
-            values = [row["slug"]] + [
-                ratings.get(a) for a in config.RATING_ATTRIBUTES] + [1, None]
-            placeholders = ", ".join(["?"] * len(cols))
-            sql = (
-                f"INSERT INTO prospect_ratings_computed ({', '.join(cols)}) "
-                f"VALUES ({placeholders}) "
-                f"ON CONFLICT(slug) DO UPDATE SET "
-                + ", ".join(f"{c}=excluded.{c}" for c in cols[1:])
-            )
-            conn.execute(sql, values)
-            n_recalc += 1
-    finally:
-        conn.close()
-    audit.log_event(
-        action="rating_recalc", entity_type="prospect",
-        note=f"bootstrap recalc: {n_recalc} prospects")
+    n_recalc = bulk_recalc.recompute_prospect_ratings(audit_note="bootstrap")
     tick(f"     ok: {n_recalc} prospects")
     tick("")
     tick("Bootstrap complete. Re-open the Reference / Prospects tabs.")
@@ -260,6 +252,15 @@ def render() -> None:
     st.divider()
 
     st.subheader("Prospects")
+    st.caption(
+        "Ratings use trained formulas on **NBA** data; they get realistic when "
+        "formulas are refit after 2K scrapes and **sports-reference CBB** fills "
+        "``prospect_stats``. Without CBB lines, a **rank-aware overall nudge** is "
+        "applied; with stats, the full regression drives attributes. "
+        "**Recompute** runs in one SQLite batch (fast on disk); a spinner and "
+        "occasional progress updates show while it works. If the database is open "
+        "in another app, close it so SQLite is not locked."
+    )
     col4, col5 = st.columns(2)
     with col4:
         if st.button("Load ESPN bigboard + seed list"):
@@ -273,40 +274,119 @@ def render() -> None:
             common.bust_cache()
             st.success(f"Loaded {len(prospects)} prospects.")
     with col5:
+        p_recalc = st.empty()
         if st.button("Recompute prospect ratings"):
-            from ..exporters import data_loader
-            from ..formulas import apply as fapply, registry as _reg
-            reg = _reg.load_registry()
-            pros = data_loader.load_prospects_df()
-            conn = db.connect()
-            try:
-                n = 0
-                for _, row in pros.iterrows():
-                    ratings, _prov = fapply.apply_to_prospect(
-                        row.to_dict(), reg)
-                    cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-                        "formula_version", "manual_override_json"]
-                    values = [row["slug"]] + [
-                        ratings.get(a) for a in config.RATING_ATTRIBUTES
-                    ] + [1, None]
-                    placeholders = ", ".join(["?"] * len(cols))
-                    sql = (
-                        f"INSERT INTO prospect_ratings_computed ({', '.join(cols)}) "
-                        f"VALUES ({placeholders}) "
-                        f"ON CONFLICT(slug) DO UPDATE SET "
-                        + ", ".join(f"{c}=excluded.{c}" for c in cols[1:])
+            def _rec_cb(i: int, total: int, slug: str) -> None:
+                try:
+                    p_recalc.progress(
+                        i / max(total, 1),
+                        text=f"Recomputing [{i}/{total}] {slug}…",
                     )
-                    conn.execute(sql, values)
-                    n += 1
-            finally:
-                conn.close()
-            audit.log_event(
-                action="rating_recalc",
-                entity_type="prospect",
-                note=f"bulk recalc: {n} prospects",
-            )
-            common.bust_cache()
-            st.success(f"Recomputed ratings for {n} prospects.")
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                with st.spinner("Recomputing prospect ratings (batch write)…"):
+                    n = bulk_recalc.recompute_prospect_ratings(
+                        progress_cb=_rec_cb,
+                        audit_note="settings",
+                    )
+                p_recalc.empty()
+                common.bust_cache()
+                st.success(f"Recomputed ratings for {n} prospects.")
+            except Exception as exc:  # noqa: BLE001
+                p_recalc.empty()
+                st.error(f"Recompute failed: {exc}")
+                st.exception(exc)
+
+    st.divider()
+    cbb_col, pipe_col = st.columns(2)
+    with cbb_col:
+        cbb_ph = st.empty()
+        if st.button(
+            "Scrape sports-reference CBB (NCAA per-game stats)",
+            help="Fetches cbb/players/… for each NCAA prospect. Required for "
+                 "non-intercept stat features in the rating formulas.",
+        ):
+            try:
+                res = _scrape_sports_reference_cbb(cbb_ph)
+                common.bust_cache()
+                st.success(
+                    f"CBB done: {res.get('ok', 0)}/{res.get('total', 0)} ok, "
+                    f"skipped: {res.get('skipped', 0)}. "
+                    "Run **Refit formulas** then **Recompute** (or the pipeline).")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"CBB scrape failed: {exc}")
+                st.exception(exc)
+        st.caption(
+            "Dates of birth are read from the same player pages: **“Born: Mon d, yyyy”**."
+        )
+        if st.button(
+            "Fill missing dates of birth (NCAA, sports-reference only)",
+            help="Re-hits cached CBB player pages; fills `date_of_birth` where still "
+            "empty. No formula refit required.",
+        ):
+            from ..scrapers import sports_reference_cbb as cbb2
+
+            pb = st.empty()
+
+            def _dob_cb(i: int, total: int, slug: str, status: str) -> None:
+                if total:
+                    try:
+                        pb.progress(
+                            i / max(total, 1), text=f"[{i}/{total}] {slug} — {status}"
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            try:
+                res = cbb2.enrich_missing_dates_of_birth(
+                    only_missing=True, progress_cb=_dob_cb,
+                )
+                common.bust_cache()
+                st.success(
+                    f"DOB: filled {res.get('filled', 0)}/"
+                    f"{res.get('total', 0)}; not found: {res.get('not_found', 0)}.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"DOB enrich failed: {exc}")
+                st.exception(exc)
+
+    with pipe_col:
+        if st.button(
+            "Full prospect pipeline: CBB + refit formulas + recompute",
+            type="primary",
+            help="Runs college stats, retrains all formulas on the NBA+2K corpus, "
+                 "then recomputes every prospect card.",
+        ):
+            pbar = st.empty()
+            try:
+                res = _scrape_sports_reference_cbb(pbar)
+                st.caption(f"Step 1 — CBB: {res}")
+                from ..calibration import fit_formulas
+                fit = fit_formulas.fit_all()
+                fitted = sum(1 for v in fit.values() if v.get("n_samples", 0) > 0)
+
+                def _recpipe(i: int, total: int, slug: str) -> None:
+                    try:
+                        pbar.progress(
+                            i / max(total, 1),
+                            text=f"Recomputing [{i}/{total}] {slug}…",
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                with st.spinner("Recomputing prospect ratings (batch write)…"):
+                    n = bulk_recalc.recompute_prospect_ratings(
+                        progress_cb=_recpipe, audit_note="pipeline",
+                    )
+                pbar.empty()
+                common.bust_cache()
+                st.success(
+                    f"Pipeline complete. Formulas with samples: {fitted}/"
+                    f"{len(fit)}. Recomputed: {n} prospects."
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Pipeline failed: {exc}")
+                st.exception(exc)
 
     st.divider()
 
@@ -324,7 +404,11 @@ def render() -> None:
             st.error(f"Parse failed: {exc}")
             return
         st.write("Preview:")
-        st.dataframe(df, use_container_width=True, height=240)
+        st.dataframe(
+            data_loader.round_float_columns_for_display(df),
+            use_container_width=True,
+            height=240,
+        )
         missing = REQUIRED_UPLOAD_COLS - set(df.columns)
         if missing:
             st.error(f"Missing required columns: {sorted(missing)}")
@@ -336,6 +420,14 @@ def render() -> None:
                                   else up.read())
             prospects = []
             for _, row in df.iterrows():
+                dob_raw = row.get("date_of_birth")
+                dob: str | None = None
+                if dob_raw is not None and not (
+                    isinstance(dob_raw, float) and pd.isna(dob_raw)
+                ):
+                    s = str(dob_raw).strip()[: 10]  # YYYY-MM-DD or Excel date
+                    if len(s) == 10 and s[4] == "-":
+                        dob = s
                 prospects.append(espn_bigboard.Prospect(
                     rank=int(row["rank"]) if pd.notna(row.get("rank")) else None,
                     full_name=str(row["full_name"]),
@@ -343,6 +435,7 @@ def render() -> None:
                     school_or_team=str(row.get("school_or_team") or "") or None,
                     league=str(row.get("league") or config.LEAGUE_NCAA),
                     age=float(row["age"]) if pd.notna(row.get("age")) else None,
+                    date_of_birth=dob,
                     height_in=float(row["height_in"]) if pd.notna(row.get("height_in")) else None,
                     weight_lbs=float(row["weight_lbs"]) if pd.notna(row.get("weight_lbs")) else None,
                     source="csv_upload",

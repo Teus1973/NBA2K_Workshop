@@ -3,16 +3,16 @@ version: 1
 type: linear_regression
 features:
 - name: std_reach_in
-  coef: 0.0
+  coef: 3.861575
 - name: max_vert_in
-  coef: 0.0
+  coef: 1.155896
 - name: is_c
   coef: 0.0
-intercept: 70.0
+intercept: -391.140046
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.6557
+mae: 9.04
+n_samples: 194
+notes: ''

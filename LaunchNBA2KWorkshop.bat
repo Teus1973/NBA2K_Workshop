@@ -9,6 +9,9 @@ rem    2. Delegate to launcher.py which handles:
 rem         - fast-path (already-running + healthy -> open browser)
 rem         - stale-PID kill on port 8506
 rem         - hidden Streamlit launch + browser open on first HTTP 200
+rem
+rem  No console: double-click "LaunchNBA2KWorkshop.vbs" (or NBA2KWorkshop.pyw)
+rem  in this folder; they run pythonw + launcher with no command window.
 rem ----------------------------------------------------------------------
 
 set "PROJECT_DIR=%~dp0"

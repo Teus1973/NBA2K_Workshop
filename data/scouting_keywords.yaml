@@ -25,6 +25,14 @@ keywords:
     deltas: { vertical_2k: -3, driving_dunk_2k: -4, standing_dunk_2k: -2 }
   - phrase: "limited athleticism"
     deltas: { vertical_2k: -3, speed_2k: -3, agility_2k: -2 }
+  - phrase: "below-average athlete"
+    deltas: { vertical_2k: -2, speed_2k: -2, agility_2k: -2 }
+  - phrase: "non athletic"
+    deltas: { vertical_2k: -4, speed_2k: -3, agility_2k: -3 }
+  - phrase: "lateral quickness"
+    deltas: { agility_2k: +2, perimeter_defense_2k: +1, speed_2k: +1 }
+  - phrase: "high vertical"
+    deltas: { vertical_2k: +2, standing_dunk_2k: +1, driving_dunk_2k: +1 }
   - phrase: "slow footed"
     deltas: { speed_2k: -3, perimeter_defense_2k: -2 }
   - phrase: "motor"

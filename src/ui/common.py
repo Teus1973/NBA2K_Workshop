@@ -82,3 +82,39 @@ def render_db_stats() -> None:
     st.sidebar.caption("Database contents")
     for k, v in stats.items():
         st.sidebar.write(f"- {k}: **{v}**")
+
+
+# ---------------------------------------------------------------------------
+def render_main_rating_engine() -> None:
+    """Top-of-app control: Excel vs YAML rating engine (see :func:`config.get_rating_engine`)."""
+    from .. import config as _cfg
+
+    labels: dict[str, str] = {
+        "calibrated": "Calibrated — YAML / linear (trained on NBA reference)",
+        "excel_2026_class": "Excel 2026 class — workbook “2026 class” sheet logic",
+    }
+    if "workshop_rating_engine" not in st.session_state:
+        st.session_state["workshop_rating_engine"] = _cfg.get_rating_engine()
+    c1, c2 = st.columns([5, 2])
+    with c1:
+        st.radio(
+            "Prospect **rating engine** (stats → 2K attributes, then overall from YAML). "
+            "This is not the Scouting text tab; it only changes numeric formulas.",
+            options=list(labels.keys()),
+            format_func=lambda k: labels[k],
+            key="workshop_rating_engine",
+            horizontal=True,
+            help=(
+                "Calibrated: feature-vector formulas in data/formulas. "
+                "Excel 2026: same structure as the spreadsheet’s 2026 class tab "
+                f"(user settings: {_cfg.USER_WORKSHOP_SETTINGS})."
+            ),
+        )
+    with c2:
+        p = _cfg.USER_WORKSHOP_SETTINGS
+        st.caption(f"Preference file: `{p.name}` in your app data folder.")
+    current = _cfg.get_rating_engine()
+    choice = st.session_state.get("workshop_rating_engine", current)
+    if choice != current:
+        _cfg.set_rating_engine(str(choice))
+        bust_cache()

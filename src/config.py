@@ -8,6 +8,7 @@ constants that everything else imports from here rather than from os.environ.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -105,11 +106,19 @@ HTTP_TIMEOUT = _as_float("NBA2K_WORKSHOP_HTTP_TIMEOUT", 20.0)
 GOOGLE_CREDENTIALS_PATH = os.environ.get("GOOGLE_CREDENTIALS_PATH", "").strip() or None
 
 # ---------------------------------------------------------------------------
-# Ollama (optional scouting-report LLM hook)
+# Ollama (local AI for scouting summaries)
 # ---------------------------------------------------------------------------
-USE_OLLAMA = (os.environ.get("NBA2K_WORKSHOP_USE_OLLAMA", "0").strip() == "1")
+# Default: try the local Ollama server. Set NBA2K_WORKSHOP_USE_OLLAMA=0 to never
+# call it (e.g. offline-only or automated tests without a server).
+USE_OLLAMA = os.environ.get("NBA2K_WORKSHOP_USE_OLLAMA", "1").strip() != "0"
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:latest").strip()
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e4b").strip()
+
+# Scouting tab: only the first N rows (by ESPN rank) run Wikipedia, web search,
+# and Ollama per page load. The rest use ESPN text / DB cache only, so the UI
+# does not run 100+ sequential LLM calls. Override with
+# ``NBA2K_WORKSHOP_SCOUTING_ENRICH_CAP``.
+SCOUTING_ENRICH_ROW_CAP = _as_int("NBA2K_WORKSHOP_SCOUTING_ENRICH_CAP", 35)
 
 # ---------------------------------------------------------------------------
 # Domain constants
@@ -117,6 +126,66 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:latest").strip()
 CURRENT_SEASON = os.environ.get("NBA2K_WORKSHOP_SEASON", "2025-26")
 DRAFT_YEAR = _as_int("NBA2K_WORKSHOP_DRAFT_YEAR", 2026)
 PROSPECT_TARGET = _as_int("NBA2K_WORKSHOP_PROSPECT_TARGET", 120)
+
+# "calibrated" = YAML/linear :mod:`src.formulas` registry. "excel_2026_class" =
+# sheet-faithful engine from the 2026 class template.
+# Env default; the UI and :func:`get_rating_engine` also read
+# :data:`USER_WORKSHOP_SETTINGS` for a persistent choice.
+RATING_ENGINE = os.environ.get("NBA2K_RATING_ENGINE", "calibrated").strip().lower()
+
+RATING_ENGINES: tuple[str, ...] = ("calibrated", "excel_2026_class")
+USER_WORKSHOP_SETTINGS: Path = get_user_data_dir() / "workshop_settings.json"
+_rating_engine_mtimes: float = 0.0
+_rating_engine_cache: str | None = None
+
+
+def get_rating_engine() -> str:
+    """Active rating engine: user settings file (if present) else :data:`RATING_ENGINE`."""
+    global _rating_engine_mtimes, _rating_engine_cache
+    p = USER_WORKSHOP_SETTINGS
+    try:
+        m = p.stat().st_mtime
+    except OSError:
+        m = 0.0
+    if m == _rating_engine_mtimes and _rating_engine_cache is not None and m > 0:
+        return _rating_engine_cache
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            e = str(data.get("rating_engine", "")).strip().lower()
+            if e in RATING_ENGINES:
+                _rating_engine_mtimes = m
+                _rating_engine_cache = e
+                return e
+        except (OSError, json.JSONDecodeError, TypeError, KeyError):
+            pass
+    dflt = RATING_ENGINE if RATING_ENGINE in RATING_ENGINES else "calibrated"
+    _rating_engine_mtimes = m
+    _rating_engine_cache = dflt
+    return dflt
+
+
+def set_rating_engine(name: str) -> None:
+    """Persist engine choice to disk; next :func:`get_rating_engine` reflects it."""
+    global _rating_engine_mtimes, _rating_engine_cache
+    n = name.strip().lower() if isinstance(name, str) else "calibrated"
+    if n not in RATING_ENGINES:
+        n = "calibrated"
+    p = USER_WORKSHOP_SETTINGS
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    data["rating_engine"] = n
+    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _rating_engine_cache = n
+    try:
+        _rating_engine_mtimes = p.stat().st_mtime
+    except OSError:
+        _rating_engine_mtimes = 0.0
 
 # The user's requested attribute list (section 2.2 of PLAN.md).
 # Ordering here is the canonical column order for every exporter and UI table.

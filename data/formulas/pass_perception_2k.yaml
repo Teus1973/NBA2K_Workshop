@@ -3,14 +3,14 @@ version: 1
 type: linear_regression
 features:
 - name: stl_per36
-  coef: 13.424713
+  coef: 12.232584
 - name: wingspan_in
-  coef: -1.781932
-intercept: 195.988002
+  coef: -0.056424
+intercept: 55.304142
 clamp:
 - 25
 - 99
-r2: 0.3331
-mae: 9.0
-n_samples: 29
+r2: 0.1509
+mae: 9.921
+n_samples: 240
 notes: ''

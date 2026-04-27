@@ -3,16 +3,16 @@ version: 1
 type: linear_regression
 features:
 - name: stl_per36
-  coef: 0.0
+  coef: 10.477481
 - name: wingspan_minus_height
-  coef: 0.0
+  coef: 0.561085
 - name: lane_agility_sec
-  coef: 0.0
-intercept: 70.0
+  coef: -11.460386
+intercept: 179.939767
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.2719
+mae: 9.448
+n_samples: 196
+notes: ''

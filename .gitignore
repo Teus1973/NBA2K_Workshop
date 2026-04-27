@@ -52,3 +52,6 @@ streamlit_launcher.log
 
 # Test artifacts
 tests/tmp/
+
+# Optional local PyInstaller / one-file launcher (do not commit large binaries)
+StartNBA2KWorkshop.exe

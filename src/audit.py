@@ -44,6 +44,7 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset({
     "scrape_nba_combine",
     "scrape_espn_bigboard",
     "scrape_cbb",
+    "dob_enrich_cbb",
     "scrape_international",
     "scrape_scouting",
     "csv_upload",

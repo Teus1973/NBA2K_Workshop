@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import io
 import json
+import re
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +24,7 @@ PROVENANCE_COLORS = {
     "combine": "#BDD7EE",
     "formula": "#FFEB9C",
     "manual":  "#D9D9D9",
+    "scouting_proxy": "#E1D5F1",
 }
 PROVENANCE_TEXT = "#1f1f1f"
 _CELL_STYLE = "background-color: {bg}; color: " + PROVENANCE_TEXT + ";"
@@ -120,6 +123,7 @@ def render() -> None:
     st.caption(
         "One row per prospect. Ratings cells are color-coded: "
         "yellow = formula-derived, blue = combine override, "
+        "light purple = scouting proxy (AI physical hints with no combine), "
         "grey = manual override, green = scraped."
     )
 
@@ -175,6 +179,12 @@ def render() -> None:
                 prov["speed_with_ball_2k"] = "combine"
             # Manual overrides
             prov.update(_provenance_for(slug, conn))
+            # AI scouting physical nudge (when no combine) — for cell coloring
+            for a, src in fapply.scouting_proxy_source_tags(
+                row.to_dict(),
+            ).items():
+                if prov.get(a) == "formula":
+                    prov[a] = src
             provenance_by_slug[slug] = prov
     finally:
         conn.close()
@@ -187,9 +197,11 @@ def render() -> None:
     c2.metric("With stats (this table)", n_with_stats)
     c3.metric("Formulas trained?", "yes" if has_trained else "no")
     st.caption(
-        "**Stats** (GP, PTS, …) load from **Settings → Scrape sports-reference CBB** "
-        "(or bootstrap step 5). They appear before 2K attributes. "
-        "**Height (ft)** is derived from height in inches."
+        "**Stats** (GP, PTS, …) come from **Settings → Scrape sports-reference CBB** "
+        "or **Full prospect pipeline** (bootstrap also runs CBB in step 5). "
+        "**Ratings** need **2K + refit** data; use the full pipeline for "
+        "CBB + refit + recompute, or only **Overall** is **rank-nudged** when "
+        "stats are missing. **Height (ft)** is from height in inches."
     )
 
     search = st.text_input(
@@ -254,6 +266,10 @@ def render() -> None:
             )
             age = st.number_input("Age", min_value=16.0, max_value=30.0,
                                   value=19.0, step=0.1)
+            dob_s = st.text_input(
+                "Date of birth (optional, YYYY-MM-DD)", "",
+                help="Example: 2006-03-15",
+            )
             height_in = st.number_input("Height (in)", min_value=60.0,
                                         max_value=96.0, value=78.0, step=0.5)
             weight_lbs = st.number_input("Weight (lbs)", min_value=120.0,
@@ -264,37 +280,54 @@ def render() -> None:
                                    value=0, step=1)
             submit = st.form_submit_button("Add", type="primary")
         if submit and full_name.strip():
-            prospect = espn_bigboard.Prospect(
-                rank=int(rank) or None,
-                full_name=full_name.strip(),
-                pos=pos,
-                school_or_team=school.strip() or None,
-                league=league,
-                age=float(age),
-                height_in=float(height_in),
-                weight_lbs=float(weight_lbs),
-                source="manual",
-            )
-            conn = db.connect()
-            try:
-                espn_bigboard.upsert_prospects(conn, [prospect])
-                conn.execute(
-                    "UPDATE prospects SET wingspan_in=?, added_by='user' WHERE slug=?",
-                    (float(wingspan_in), prospect.slug),
+            dob_val: str | None = None
+            dob_error: str | None = None
+            if dob_s.strip():
+                s = dob_s.strip()
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+                    try:
+                        date.fromisoformat(s)
+                        dob_val = s
+                    except ValueError:
+                        dob_error = "Date of birth must be a valid YYYY-MM-DD."
+                else:
+                    dob_error = "Date of birth: use YYYY-MM-DD or leave blank."
+            if dob_error:
+                st.error(dob_error)
+            else:
+                prospect = espn_bigboard.Prospect(
+                    rank=int(rank) or None,
+                    full_name=full_name.strip(),
+                    pos=pos,
+                    school_or_team=school.strip() or None,
+                    league=league,
+                    age=float(age),
+                    height_in=float(height_in),
+                    weight_lbs=float(weight_lbs),
+                    date_of_birth=dob_val,
+                    source="manual",
                 )
-            finally:
-                conn.close()
-            audit.log_event(
-                action="player_added",
-                entity_type="prospect",
-                entity_slug=prospect.slug,
-                after={"rank": rank, "pos": pos, "school": school,
-                       "league": league},
-                note="manual add",
-            )
-            _recompute_one(prospect.slug)
-            common.bust_cache()
-            st.success(f"Added {full_name}.")
+                conn = db.connect()
+                try:
+                    espn_bigboard.upsert_prospects(conn, [prospect])
+                    conn.execute(
+                        "UPDATE prospects SET wingspan_in=?, added_by='user' "
+                        "WHERE slug=?",
+                        (float(wingspan_in), prospect.slug),
+                    )
+                finally:
+                    conn.close()
+                audit.log_event(
+                    action="player_added",
+                    entity_type="prospect",
+                    entity_slug=prospect.slug,
+                    after={"rank": rank, "pos": pos, "school": school,
+                           "league": league},
+                    note="manual add",
+                )
+                _recompute_one(prospect.slug)
+                common.bust_cache()
+                st.success(f"Added {full_name}.")
 
     with right:
         st.subheader("Remove player / override")

@@ -9,6 +9,7 @@ translate them into rows for ``prospect_stats``.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -39,6 +40,26 @@ def _parse_int(v: Any) -> int | None:
     return int(f) if f is not None else None
 
 
+def _parse_dob_from_info_text(t: str) -> str | None:
+    """Parse ``Born: Mon dd, yyyy`` / abbreviated month from sports-reference
+    CBB info box HTML ``get_text``."""
+    m = re.search(
+        r"Born[:\s]+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})",
+        t,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    s = m.group(1).strip()
+    s = re.sub(r"\s+", " ", s)
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            pass
+    return None
+
+
 def slugify(full_name: str) -> str:
     """Generate a first-pass sports-reference slug.
 
@@ -62,6 +83,9 @@ def parse_player_page(html: str) -> dict[str, Any]:
     info = soup.find("div", id="info") or soup.find("div", class_="players")
     if info is not None:
         t = info.get_text(" ", strip=True)
+        dob = _parse_dob_from_info_text(t)
+        if dob:
+            out["date_of_birth"] = dob
         m_h = re.search(r"(\d)-(\d{1,2})\b", t)
         if m_h:
             out["height_in"] = int(m_h.group(1)) * 12 + int(m_h.group(2))
@@ -171,6 +195,16 @@ def bulk_scrape_ncaa_prospects(*, progress_cb=None) -> dict[str, int]:
                     break
             status = "ok" if stats else "no-data"
             if stats:
+                dob = stats.pop("date_of_birth", None)
+                if isinstance(dob, str) and dob.strip():
+                    conn.execute(
+                        """
+                        UPDATE prospects
+                        SET date_of_birth=COALESCE(?, date_of_birth)
+                        WHERE slug=?
+                        """,
+                        (dob.strip()[: 10], slug),
+                    )
                 n = upsert_stats(conn, slug, stats)
                 conn.commit()
                 if n:
@@ -194,6 +228,85 @@ def bulk_scrape_ncaa_prospects(*, progress_cb=None) -> dict[str, int]:
         note=f"bulk ncaa: total={total} ok={ok} skipped={skipped}",
     )
     return {"total": total, "ok": ok, "skipped": skipped}
+
+
+def enrich_missing_dates_of_birth(
+    *,
+    only_missing: bool = True,
+    progress_cb: Any = None,
+) -> dict[str, int]:
+    """Fill ``prospects.date_of_birth`` from sports-reference CBB info boxes.
+
+    Uses the same per-player URLs as the stat scrape (cached). Tries
+    disambiguation suffixes 1-5. When ``only_missing`` is True, only rows
+    with NULL ``date_of_birth`` are updated.
+    """
+    from .. import db as _db
+
+    conn = _db.connect()
+    try:
+        if only_missing:
+            rows = conn.execute(
+                """
+                SELECT slug, full_name, league, date_of_birth
+                FROM prospects
+                WHERE date_of_birth IS NULL
+                  AND (league IS NULL OR league = 'ncaa')
+                ORDER BY espn_rank IS NULL, espn_rank, full_name
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT slug, full_name, league, date_of_birth
+                FROM prospects
+                WHERE (league IS NULL OR league = 'ncaa')
+                ORDER BY espn_rank IS NULL, espn_rank, full_name
+                """
+            ).fetchall()
+    finally:
+        conn.close()
+
+    total = len(rows)
+    got = 0
+    not_found = 0
+    conn = _db.connect()
+    try:
+        for i, r in enumerate(rows, start=1):
+            slug = r["slug"]
+            name = r["full_name"]
+            sr_slug = slugify(name)
+            data: dict[str, Any] = {}
+            for suffix in range(1, 6):
+                data = fetch_player(sr_slug, suffix=suffix)
+                if data and data.get("date_of_birth"):
+                    break
+            dob = (data or {}).get("date_of_birth")
+            if isinstance(dob, str) and len(dob) >= 8:
+                conn.execute(
+                    "UPDATE prospects SET date_of_birth=? WHERE slug=?",
+                    (dob[: 10], slug),
+                )
+                conn.commit()
+                got += 1
+            else:
+                not_found += 1
+            if progress_cb is not None:
+                try:
+                    progress_cb(
+                        i, total, str(slug), "dob" if dob else "no-dob",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+    finally:
+        conn.close()
+
+    audit.log_event(
+        action="dob_enrich_cbb",
+        entity_type="prospects",
+        note=f"sr cbb: total={total} filled={got} not_found={not_found}",
+    )
+    return {"total": total, "filled": got, "not_found": not_found}
 
 
 def upsert_stats(conn, slug: str, stats: dict[str, Any]) -> int:

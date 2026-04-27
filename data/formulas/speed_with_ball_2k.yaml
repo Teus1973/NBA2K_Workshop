@@ -3,18 +3,18 @@ version: 1
 type: linear_regression
 features:
 - name: three_quarter_sprint_sec
-  coef: 0.0
+  coef: -35.286778
 - name: weight_lbs
-  coef: 0.0
+  coef: -0.412226
 - name: is_pg
   coef: 0.0
 - name: is_sg
   coef: 0.0
-intercept: 70.0
+intercept: 270.476297
 clamp:
 - 25
 - 99
-r2: 0.0
-mae: 0.0
-n_samples: 24
-notes: ' (stub; n=24)'
+r2: 0.6173
+mae: 7.257
+n_samples: 195
+notes: ''

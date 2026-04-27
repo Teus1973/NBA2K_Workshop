@@ -21,7 +21,7 @@ from .logger import get_logger
 
 log = get_logger("db")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +259,33 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 )
 
 
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns on existing DBs and align ``schema_meta.version``."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(prospects)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "date_of_birth" not in cols:
+        cur.execute("ALTER TABLE prospects ADD COLUMN date_of_birth TEXT")
+    if "scouting_ai_summary" not in cols:
+        cur.execute(
+            "ALTER TABLE prospects ADD COLUMN scouting_ai_summary TEXT")
+    if "scouting_physical_text" not in cols:
+        cur.execute(
+            "ALTER TABLE prospects ADD COLUMN scouting_physical_text TEXT")
+    if "scouting_physical_json" not in cols:
+        cur.execute(
+            "ALTER TABLE prospects ADD COLUMN scouting_physical_json TEXT")
+    row = cur.execute(
+        "SELECT value FROM schema_meta WHERE key='version'",
+    ).fetchone()
+    v = int(row[0]) if row and str(row[0]).isdigit() else 1
+    if v < SCHEMA_VERSION:
+        cur.execute(
+            "UPDATE schema_meta SET value=? WHERE key='version'",
+            (str(SCHEMA_VERSION),),
+        )
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     """Create any missing tables and bump schema_meta if empty."""
     cur = conn.cursor()
@@ -268,6 +295,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('version', ?)",
         (str(SCHEMA_VERSION),),
     )
+    _migrate_schema(conn)
     conn.commit()
 
 
