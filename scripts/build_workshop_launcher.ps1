@@ -1,4 +1,4 @@
-# Build LaunchNBA2KWorkshop.exe in the project root (real Windows PE, not a .vbs).
+# Build NBA2KWorkshop.exe in the project root (real Windows PE, not a .vbs).
 # The .exe is written directly into this repo so Norton file exclusions apply.
 # If AV still deletes it, exclude the whole project folder or pause protection for the build.
 # Prerequisites: venv +  pip install pyinstaller

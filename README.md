@@ -1,6 +1,6 @@
-**Last updated: 2026-04-28**
+**Last updated: 2026-05-01**
 
-# NBA2K26 Rookie Rating Tool
+# NBA2K26 Rookie Rating Tool (NBA2K Workshop)
 
 A local, personal-use Streamlit tool that estimates **NBA 2K26** ratings for the **top 120 prospects of the 2026 NBA Draft**. It scrapes `2kratings.com` and `nba.com/stats` to build a calibration corpus of currently rostered NBA players, fits transparent per-attribute regression formulas (viewable and editable in the UI), and applies those formulas to each prospect using their college / international stats and (post-combine) official NBA Draft Combine measurements.
 
@@ -24,12 +24,16 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-**Every other time** — just double-click the launcher:
+**Every other time** — double-click the launcher script, or run the packaged Windows binary when present:
 
 ```text
 LaunchNBA2KWorkshop.bat        <-- normal use; self-heals venv, hides console
+NBA2K Workshop.exe             <-- optional PyInstaller build (see scripts/build_workshop_launcher.ps1)
+StartNBA2KWorkshop.cmd         <-- picks NBA2K Workshop.exe / other launcher names in order
 TroubleshootNBA2KWorkshop.bat  <-- visible console for debugging startup errors
 ```
+
+Bundled branding lives under `assets/` (`app_logo.png` sidebar + favicon source, `app_icon.ico` for the `.exe`). Rebuild the launcher after changing art.
 
 Manual fallback (activated venv):
 
@@ -73,6 +77,7 @@ The app opens at `http://localhost:8506` with the following tabs:
 ```
 NBA2K_Workshop\
   app.py                        Streamlit entrypoint (all tabs)
+  assets\                       App logo (PNG) + Windows icon (ICO) for UI and PyInstaller
   launcher.py                   Hidden Streamlit bootstrap + health probe
   LaunchNBA2KWorkshop.bat       Double-click launcher (self-heals venv)
   TroubleshootNBA2KWorkshop.bat Visible-console fallback for startup errors
@@ -90,8 +95,8 @@ NBA2K_Workshop\
     exports\                   generated .xlsx files
   src\
     config.py, logger.py, db.py, audit.py, bulk_recalc.py, scouting_persist.py
-    scrapers\{twokratings,nba_stats,nba_combine,espn_bigboard,
-              sports_reference_cbb,international,scouting}.py
+    scrapers\{twokratings,nba_stats,nba_combine,espn_bigboard,espn_mens_cbb,
+              sports_reference_cbb,international,scouting,wikidata,stat_normalize}.py
     calibration\{build_corpus,fit_formulas,evaluate}.py
     formulas\{registry,apply,excel_2026_class}.py
     exporters\{excel_writer,gsheets_writer,data_loader}.py
@@ -109,7 +114,10 @@ NBA2K_Workshop\
 | `2kratings.com` | 45 attributes per NBA player (height, weight, wingspan, Close Shot, 3PT, Speed, Strength, …) | `src/scrapers/twokratings.py` |
 | `nba.com/stats` via `nba_api` | regular-season + playoff stats, Draft Combine Anthro / Drills / Stats | `src/scrapers/nba_stats.py`, `nba_combine.py` |
 | `espn.com` big board | top-100 prospects + school + position + scouting prose | `src/scrapers/espn_bigboard.py` |
-| `sports-reference.com/cbb` | college stats with shot-zone splits | `src/scrapers/sports_reference_cbb.py` |
+| `sports-reference.com/cbb` | NCAA college stats with shot-zone splits | `src/scrapers/sports_reference_cbb.py` |
+| `espn.com` NCAA men's basketball | supplemental fills when SR rows are sparse | `src/scrapers/espn_mens_cbb.py` |
+| `basketball-reference.com/international` | international / non-NCAA career totals (after Proballers) | `src/scrapers/international.py` |
+| `wikidata.org` | dates of birth when SR pages omit **Born:** | `src/scrapers/wikidata.py` |
 | `proballers.com` / Euroleague | international stats (NZNBL, NBL, Euroleague, ACB, LNB) | `src/scrapers/international.py` |
 
 Rate-limit knobs live in `.env` (`NBA2K_WORKSHOP_SCRAPE_RPS`, `NBA2K_WORKSHOP_USER_AGENT`). All raw responses are cached under `data/cache/` and only refetched when TTL expires or a user explicitly triggers a refresh.

@@ -33,6 +33,8 @@ def _parse_upload(file) -> pd.DataFrame:
 
 def _scrape_sports_reference_cbb(
     progress_placeholder,
+    *,
+    force_refresh: bool = False,
 ) -> dict[str, int | str]:
     from ..scrapers import sports_reference_cbb as cbb
 
@@ -46,7 +48,29 @@ def _scrape_sports_reference_cbb(
             except Exception:  # noqa: BLE001
                 pass
 
-    return cbb.bulk_scrape_ncaa_prospects(progress_cb=_cb)
+    return cbb.bulk_scrape_ncaa_prospects(
+        progress_cb=_cb, force_refresh=force_refresh)
+
+
+def _scrape_international_stats(
+    progress_placeholder,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, int]:
+    from ..scrapers import international as intl
+
+    def _cb(i: int, total: int, slug: str, status: str) -> None:
+        if progress_placeholder is not None and total:
+            try:
+                progress_placeholder.progress(
+                    i / max(total, 1),
+                    text=f"[intl {i}/{total}] {slug}: {status}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+    return intl.bulk_scrape_international_prospects(
+        progress_cb=_cb, force_refresh=force_refresh)
 
 
 def _db_stats() -> dict[str, int]:
@@ -117,6 +141,14 @@ def _run_bootstrap(progress_placeholder) -> None:
         from ..scrapers import sports_reference_cbb as _cbb
         res_cbb = _cbb.bulk_scrape_ncaa_prospects(progress_cb=_cb)
         tick(f"     done: {res_cbb}")
+    except Exception as exc:  # noqa: BLE001
+        tick(f"     skipped (non-fatal): {exc}")
+
+    tick("5b/7  Scraping proballers.com for non-NCAA prospects...")
+    try:
+        from ..scrapers import international as _intl
+        res_intl = _intl.bulk_scrape_international_prospects(progress_cb=_cb)
+        tick(f"     done: {res_intl}")
     except Exception as exc:  # noqa: BLE001
         tick(f"     skipped (non-fatal): {exc}")
 
@@ -299,16 +331,23 @@ def render() -> None:
                 st.exception(exc)
 
     st.divider()
+    prospect_stats_force_refresh = st.checkbox(
+        "Bypass HTML cache when scraping prospect stats (slower; use if oreb/dreb "
+        "stay empty or numbers look stale)",
+        value=False,
+        key="nba2k_prospect_stats_force_refresh",
+    )
     cbb_col, pipe_col = st.columns(2)
     with cbb_col:
         cbb_ph = st.empty()
         if st.button(
             "Scrape sports-reference CBB (NCAA per-game stats)",
-            help="Fetches cbb/players/… for each NCAA prospect. Required for "
-                 "non-intercept stat features in the rating formulas.",
+            help="NCAA **only** (cbb/players/…). Non-NCAA leagues never appear there — "
+                 "use **international scrape** below or **NCAA + international**.",
         ):
             try:
-                res = _scrape_sports_reference_cbb(cbb_ph)
+                res = _scrape_sports_reference_cbb(
+                    cbb_ph, force_refresh=prospect_stats_force_refresh)
                 common.bust_cache()
                 st.success(
                     f"CBB done: {res.get('ok', 0)}/{res.get('total', 0)} ok, "
@@ -318,12 +357,15 @@ def render() -> None:
                 st.error(f"CBB scrape failed: {exc}")
                 st.exception(exc)
         st.caption(
-            "Dates of birth are read from the same player pages: **“Born: Mon d, yyyy”**."
+            "**Dates of birth:** Sports-Reference CBB pages usually **omit birthdates "
+            "now**. Use **Fill missing dates…** — it tries SR where relevant, then "
+            "**Wikidata** (Wikipedia)."
         )
         if st.button(
-            "Fill missing dates of birth (NCAA, sports-reference only)",
-            help="Re-hits cached CBB player pages; fills `date_of_birth` where still "
-            "empty. No formula refit required.",
+            "Fill missing dates of birth (Wikipedia / Wikidata + SR fallback)",
+            help="Sets ``date_of_birth`` from Wikidata when the English Wikipedia "
+                 "article maps to an entity with birth date (P569). NCAA prospects "
+                 "also try cached SR pages first if ``Born:`` exists.",
         ):
             from ..scrapers import sports_reference_cbb as cbb2
 
@@ -345,10 +387,68 @@ def render() -> None:
                 common.bust_cache()
                 st.success(
                     f"DOB: filled {res.get('filled', 0)}/"
-                    f"{res.get('total', 0)}; not found: {res.get('not_found', 0)}.",
+                    f"{res.get('total', 0)}; not found: {res.get('not_found', 0)} "
+                    f"(SR: {res.get('from_sr', 0)}, Wikidata: {res.get('from_wikidata', 0)}).",
                 )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"DOB enrich failed: {exc}")
+                st.exception(exc)
+
+        intl_ph = st.empty()
+        if st.button(
+            "Scrape non-NCAA stats (Proballers + Basketball-Reference intl.)",
+            help="Prospects whose ``league`` is not ``ncaa``. Tries proballers.com "
+                 "slugs first, then Basketball-Reference international player pages.",
+        ):
+            from ..scrapers import international as intl_sc
+
+            def _intl_cb(i: int, total: int, slug: str, status: str) -> None:
+                if total:
+                    try:
+                        intl_ph.progress(
+                            i / max(total, 1),
+                            text=f"[{i}/{total}] {slug}: {status}",
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            try:
+                res_intl = intl_sc.bulk_scrape_international_prospects(
+                    progress_cb=_intl_cb,
+                    force_refresh=prospect_stats_force_refresh,
+                )
+                common.bust_cache()
+                st.success(
+                    f"International done: {res_intl.get('ok', 0)}/"
+                    f"{res_intl.get('total', 0)} ok, skipped: "
+                    f"{res_intl.get('skipped', 0)}.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"International scrape failed: {exc}")
+                st.exception(exc)
+
+        combo_ph = st.empty()
+        if st.button(
+            "Scrape NCAA + non-NCAA stats (both pipelines)",
+            help="Runs sports-reference CBB for NCAA prospects, then international "
+                 "(Proballers + Basketball-Reference) for everyone else.",
+        ):
+            try:
+                res_cb = _scrape_sports_reference_cbb(
+                    combo_ph, force_refresh=prospect_stats_force_refresh)
+                combo_ph.empty()
+                res_intl = _scrape_international_stats(
+                    combo_ph, force_refresh=prospect_stats_force_refresh)
+                common.bust_cache()
+                combo_ph.empty()
+                st.success(
+                    f"NCAA CBB: {res_cb.get('ok', 0)}/{res_cb.get('total', 0)} ok; "
+                    f"international: {res_intl.get('ok', 0)}/"
+                    f"{res_intl.get('total', 0)} ok. "
+                    "Then **Refit formulas** + **Recompute** if needed.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Combined scrape failed: {exc}")
                 st.exception(exc)
 
     with pipe_col:
@@ -360,8 +460,25 @@ def render() -> None:
         ):
             pbar = st.empty()
             try:
-                res = _scrape_sports_reference_cbb(pbar)
+                res = _scrape_sports_reference_cbb(
+                    pbar, force_refresh=prospect_stats_force_refresh)
                 st.caption(f"Step 1 — CBB: {res}")
+                from ..scrapers import international as intl_mod
+
+                def _intl_pipe_cb(i: int, total: int, slug: str, status: str) -> None:
+                    try:
+                        pbar.progress(
+                            i / max(total, 1),
+                            text=f"Intl [{i}/{total}] {slug}: {status}",
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                res_intl = intl_mod.bulk_scrape_international_prospects(
+                    progress_cb=_intl_pipe_cb,
+                    force_refresh=prospect_stats_force_refresh,
+                )
+                st.caption(f"Step 1b — Proballers (non-NCAA): {res_intl}")
                 from ..calibration import fit_formulas
                 fit = fit_formulas.fit_all()
                 fitted = sum(1 for v in fit.values() if v.get("n_samples", 0) > 0)

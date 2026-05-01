@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title NBA2K26 Workshop - Launcher
+title NBA2K Workshop - Launcher
 
 rem ----------------------------------------------------------------------
 rem  Self-healing launcher
@@ -20,7 +20,7 @@ set "VENV_PYTHON=%PROJECT_DIR%venv\Scripts\python.exe"
 pushd "%PROJECT_DIR%"
 
 echo ============================================================
-echo  NBA2K26 Rookie Rating Tool - Self-Healing Launcher
+echo  NBA2K Workshop - Self-Healing Launcher
 echo ============================================================
 echo.
 
@@ -63,7 +63,7 @@ echo [INFO] Environment ready.
 echo.
 
 :launch
-echo [INFO] Starting NBA2K26 Workshop...
+echo [INFO] Starting NBA2K Workshop...
 "%VENV_PYTHON%" "%PROJECT_DIR%launcher.py"
 set "RC=%ERRORLEVEL%"
 

@@ -10,6 +10,8 @@ Usage::
     python -m src.cli refresh-combine
     python -m src.cli refresh-prospects
     python -m src.cli refresh-2kratings [--limit N] [--force]
+    python -m src.cli refresh-prospect-stats [--force]
+    python -m src.cli refresh-prospect-intl [--force]
     python -m src.cli refit
     python -m src.cli recalc
     python -m src.cli export-excel [OUT]
@@ -121,17 +123,33 @@ def refresh_2kratings(
     return result
 
 
-def refresh_prospect_stats() -> dict:
+def refresh_prospect_stats(force_refresh: bool = False) -> dict:
     """Bulk-scrape sports-reference CBB stats for every NCAA prospect."""
     from .scrapers import sports_reference_cbb as cbb
-    log.info("refresh_prospect_stats: start")
+    log.info("refresh_prospect_stats: start (force_refresh=%s)", force_refresh)
 
     def _cb(i: int, total: int, slug: str, status: str) -> None:
         if i == 1 or i % 20 == 0 or i == total:
             log.info("  [%d/%d] %-30s %s", i, total, slug, status)
 
-    result = cbb.bulk_scrape_ncaa_prospects(progress_cb=_cb)
+    result = cbb.bulk_scrape_ncaa_prospects(
+        progress_cb=_cb, force_refresh=force_refresh)
     log.info("refresh_prospect_stats: %s", result)
+    return result
+
+
+def refresh_prospect_intl_stats(force_refresh: bool = False) -> dict:
+    """Bulk-scrape non-NCAA prospects (proballers, then Basketball-Reference intl)."""
+    from .scrapers import international as intl
+    log.info("refresh_prospect_intl_stats: start (force_refresh=%s)", force_refresh)
+
+    def _cb(i: int, total: int, slug: str, status: str) -> None:
+        if i == 1 or i % 10 == 0 or i == total:
+            log.info("  [%d/%d] %-30s %s", i, total, slug, status)
+
+    result = intl.bulk_scrape_international_prospects(
+        progress_cb=_cb, force_refresh=force_refresh)
+    log.info("refresh_prospect_intl_stats: %s", result)
     return result
 
 
@@ -192,8 +210,24 @@ def main(argv: list[str] | None = None) -> int:
                       help="Ignore HTML cache and refetch every page")
     p_2k.add_argument("--missing", action="store_true",
                       help="Only players without a nba_ratings_2k26 row")
-    sub.add_parser("refresh-prospect-stats",
-                   help="scrape sports-reference CBB stats for NCAA prospects")
+    p_ps = sub.add_parser(
+        "refresh-prospect-stats",
+        help="scrape sports-reference CBB stats for NCAA prospects",
+    )
+    p_ps.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore cached CBB HTML and refetch every player page",
+    )
+    p_pi = sub.add_parser(
+        "refresh-prospect-intl",
+        help="scrape proballers.com for non-NCAA prospects",
+    )
+    p_pi.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore cached proballers HTML",
+    )
     sub.add_parser("refit")
     sub.add_parser("recalc")
     p_exp = sub.add_parser("export-excel")
@@ -215,7 +249,9 @@ def main(argv: list[str] | None = None) -> int:
         refresh_2kratings(
             limit=args.limit, force=args.force, only_missing=args.missing)
     elif cmd == "refresh-prospect-stats":
-        refresh_prospect_stats()
+        refresh_prospect_stats(force_refresh=args.force)
+    elif cmd == "refresh-prospect-intl":
+        refresh_prospect_intl_stats(force_refresh=args.force)
     elif cmd == "refit":
         refit_formulas()
     elif cmd == "recalc":

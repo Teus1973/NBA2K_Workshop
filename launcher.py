@@ -1,5 +1,5 @@
 """
-NBA2K26 Workshop launcher — mirrors the SubtitleForge pattern.
+NBA2K Workshop launcher — mirrors the SubtitleForge pattern.
 
 Behaviour
 ---------
@@ -34,7 +34,7 @@ def _resolve_project_dir() -> Path:
     """When frozen, find the workshop root (``app.py`` + ``venv``), not only the .exe folder.
 
     Supports **onefile** (exe next to ``app.py``) and **onedir** (exe in a subfolder like
-    ``LaunchNBA2KWorkshop/LaunchNBA2KWorkshop.exe``).
+    ``NBA2KWorkshop/NBA2KWorkshop.exe``).
     """
     if getattr(sys, "frozen", False):
         here = Path(sys.executable).resolve().parent
@@ -204,7 +204,7 @@ def _wait_for_server(timeout: int) -> bool:
 def _show_error(msg: str, *, icon: int = 0x10) -> None:
     """Pop a native Windows MessageBox (MB_ICONERROR=0x10, MB_ICONWARNING=0x30)."""
     try:
-        ctypes.windll.user32.MessageBoxW(0, msg, "NBA2K26 Workshop", icon)
+        ctypes.windll.user32.MessageBoxW(0, msg, "NBA2K Workshop", icon)
     except Exception:
         print(msg, file=sys.stderr)
 

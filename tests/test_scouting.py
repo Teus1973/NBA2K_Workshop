@@ -96,6 +96,11 @@ def test_format_listing_for_scouting_non_empty_with_rank_and_size() -> None:
     assert "6'" in block or "78" in block
 
 
+def test_wikipedia_intro_returns_none_when_api_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(scouting, "_wikipedia_api_get", lambda *a, **k: None)
+    assert scouting.wikipedia_intro("Meleek Thomas") is None
+
+
 def test_collect_prospect_blurbs_skips_wikipedia_when_disabled(monkeypatch) -> None:
     monkeypatch.setattr(
         scouting,

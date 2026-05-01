@@ -1,4 +1,4 @@
-' NBA2K26 Workshop — double-click to launch (no console window).
+' NBA2K Workshop — double-click to launch (no console window).
 ' Requires Python venv at .\venv\Scripts\pythonw.exe and launcher.py in this folder.
 Option Explicit
 Dim fso, sh, root, pyw, script
@@ -12,7 +12,7 @@ If Not fso.FileExists(pyw) Then
 End If
 If Not fso.FileExists(pyw) Or Not fso.FileExists(script) Then
   MsgBox "Could not find venv\Scripts\pythonw.exe and launcher.py in:" & vbCrLf & root, _
-    vbExclamation, "NBA2K26 Workshop"
+    vbExclamation, "NBA2K Workshop"
   WScript.Quit 1
 End If
 sh.CurrentDirectory = root

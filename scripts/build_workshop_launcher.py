@@ -1,5 +1,8 @@
 """
-Build ``LaunchNBA2KWorkshop.exe`` via PyInstaller.
+Build ``NBA2KWorkshop.exe`` via PyInstaller.
+
+Embeds ``assets/app_icon.ico`` when present (generate from ``assets/app_logo.png``
+with Pillow: ``pip install pillow`` then save multi-size ICO).
 
 On some Windows setups, real-time AV deletes or locks the .exe between the append
 and the PE timestamp step, so PyInstaller's ``set_exe_build_timestamp`` raises and
@@ -63,6 +66,9 @@ def _patch_pyi_win_post() -> None:
     os.rename = rename_skip_missing
 
 
+LAUNCHER_EXE_NAME = "NBA2KWorkshop"
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     root = Path(__file__).resolve().parent.parent
@@ -82,11 +88,19 @@ def main() -> int:
     os.makedirs(tmp_work, exist_ok=True)
     os.makedirs(tmp_dist, exist_ok=True)
 
-    out_exe = root / "LaunchNBA2KWorkshop.exe"
+    out_exe = root / f"{LAUNCHER_EXE_NAME}.exe"
 
-    spec = root / "LaunchNBA2KWorkshop.spec"
-    if spec.is_file():
-        spec.unlink()
+    icon_arg: list[str] = []
+    icon_path = (root / "assets" / "app_icon.ico").resolve()
+    if icon_path.is_file():
+        icon_arg = ["--icon", str(icon_path)]
+        log.info("Embedding icon %s", icon_path)
+    else:
+        log.warning(
+            "Missing %s — exe will use the default PyInstaller icon. "
+            "Generate from assets/app_logo.png (see script docstring).",
+            icon_path,
+        )
 
     sys.argv = [
         "pyinstaller",
@@ -100,12 +114,13 @@ def main() -> int:
         "--specpath",
         str(root),
         "--name",
-        "LaunchNBA2KWorkshop",
+        LAUNCHER_EXE_NAME,
+        *icon_arg,
         str(root / "launcher.py"),
     ]
     runpy.run_module("PyInstaller.__main__", run_name="__main__")
 
-    built = tmp_dist / "LaunchNBA2KWorkshop.exe"
+    built = tmp_dist / f"{LAUNCHER_EXE_NAME}.exe"
     if not built.is_file():
         log.error(
             "No output at %s. Exclude the project folder or pause real-time AV, then retry.",
@@ -117,8 +132,10 @@ def main() -> int:
     # quarantined before, even if exclusions exist; a different filename can work.
     (root / "dist").mkdir(parents=True, exist_ok=True)
     dests: list[Path] = [
+        root / "NBA2K Workshop.exe",
         out_exe,
         root / "StartNBA2KWorkshop.exe",
+        root / "LaunchNBA2KWorkshop.exe",
         root / "WorkshopApp.exe",
         root / "dist" / "StartNBA2KWorkshop.exe",
     ]

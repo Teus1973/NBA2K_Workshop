@@ -1,6 +1,23 @@
-**Last updated: 2026-04-28**
+**Last updated: 2026-05-01**
 
 # NBA2K26 Rookie Rating Tool — Release Notes
+
+## v0.3.0 — 2026-05-01
+
+### Highlights
+- **NBA2K Workshop** branding: sidebar logo and browser favicon from `assets/app_logo.png` (transparent PNG); Windows launcher icon from `assets/app_icon.ico`. Optional **`NBA2K Workshop.exe`** output from `scripts/build_workshop_launcher.py` / `.ps1`; `StartNBA2KWorkshop.cmd` prefers that name when present.
+- **Prospect stats**: ESPN NCAA men’s basketball scraper (`src/scrapers/espn_mens_cbb.py`) fills gaps when Sports-Reference CBB rows are sparse or `team.$ref` is missing; SR pipeline merges supplemental ESPN fields and may label source `sports-reference+espn-mcb`.
+- **International**: Basketball-Reference international player pages (`src/scrapers/international.py`) after Proballers for non-NCAA career totals; slug variants for lookup resilience.
+- **Dates of birth**: bulk enrichment uses **Wikidata** (`src/scrapers/wikidata.py`) when SR omits **Born:**; defensive handling so one bad lookup does not abort the batch.
+- **Scouting / Wikipedia**: throttling and retries on HTTP **429** with `Retry-After` awareness (`src/scrapers/scouting.py`).
+- **Settings** tab copy clarifies NCAA CBB vs international pipelines and DOB sources.
+
+### Added / changed
+- **Tests**: `test_wikidata.py`, `test_bbintl_parse.py`, `test_espn_mens_cbb.py`, `test_stat_normalize.py`; updates to scouting and SR DOB tests.
+- **`LaunchNBA2KWorkshop.spec`**: portable paths relative to the spec file; PyInstaller embeds `assets/app_icon.ico` when present.
+- **`.gitignore`**: generated `NBA2KWorkshop.spec`, spaced launcher exe name, existing launcher binaries.
+
+---
 
 ## v0.2.0 — 2026-04-28
 

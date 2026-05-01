@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,11 @@ from . import _http
 from . import espn_bigboard
 
 log = get_logger("scrapers.scouting")
+
+_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
+_WIKI_MIN_INTERVAL_SEC = 0.55
+_WIKI_LOCK = threading.Lock()
+_WIKI_LAST_MONO = 0.0
 
 _OLLAMA_REACH_CACHE: tuple[float, bool] | None = None
 _OLLAMA_REACH_TTL_SEC = 30.0
@@ -247,6 +253,98 @@ def big_board_line_from_html(html: str, slug: str, full_name: str | None) -> str
     return None
 
 
+def _wikipedia_user_agent() -> str:
+    """Identify this app for Wikimedia rate limits (avoid generic python-requests)."""
+    ua = (config.USER_AGENT or "").strip()
+    if not ua or "python-requests" in ua.lower():
+        ua = "NBA2K-Workshop/1.0"
+    return f"{ua} (local NBA 2K draft workshop; Wikipedia extracts for scouting blurbs)"
+
+
+def _wikipedia_throttle() -> None:
+    """Space out API hits — burst requests trigger HTTP 429."""
+    global _WIKI_LAST_MONO
+    with _WIKI_LOCK:
+        now = time.monotonic()
+        gap = now - _WIKI_LAST_MONO
+        wait = _WIKI_MIN_INTERVAL_SEC - gap
+        if wait > 0:
+            time.sleep(wait)
+        _WIKI_LAST_MONO = time.monotonic()
+
+
+def _wikipedia_api_get(
+    params: dict[str, Any],
+    *,
+    timeout: float = 15.0,
+) -> dict[str, Any] | None:
+    """GET the Wikipedia JSON API with throttling and retries on 429 / 5xx."""
+    headers = {"User-Agent": _wikipedia_user_agent()}
+    last_log: str | None = None
+    for attempt in range(1, 7):
+        _wikipedia_throttle()
+        try:
+            r = requests.get(
+                _WIKIPEDIA_API,
+                params=params,
+                timeout=timeout,
+                headers=headers,
+            )
+        except requests.RequestException as exc:
+            last_log = str(exc)
+            log.info(
+                "Wikipedia API request failed (attempt %s/%s): %s",
+                attempt,
+                7,
+                exc,
+            )
+            time.sleep(min(30.0, 0.6 * attempt))
+            continue
+
+        if r.status_code == 429:
+            raw_ra = r.headers.get("Retry-After")
+            try:
+                wait_s = float(raw_ra) if raw_ra is not None else 2.0 ** min(attempt, 5)
+            except ValueError:
+                wait_s = 2.0 ** min(attempt, 5)
+            wait_s = max(wait_s, 1.0)
+            wait_s = min(wait_s, 120.0)
+            log.warning(
+                "Wikipedia API rate limited (429); sleeping %.1fs before retry",
+                wait_s,
+            )
+            time.sleep(wait_s)
+            continue
+
+        if r.status_code >= 500:
+            log.info(
+                "Wikipedia API HTTP %s; retry in %.1fs",
+                r.status_code,
+                0.5 * attempt,
+            )
+            time.sleep(0.5 * attempt)
+            continue
+
+        if r.status_code != 200:
+            log.info(
+                "Wikipedia API HTTP %s for action=%r",
+                r.status_code,
+                params.get("action"),
+            )
+            return None
+
+        try:
+            return r.json()
+        except ValueError as exc:
+            last_log = str(exc)
+            log.info("Wikipedia API invalid JSON: %s", exc)
+            time.sleep(0.4 * attempt)
+
+    if last_log:
+        log.info("Wikipedia API exhausted retries (%s)", last_log)
+    return None
+
+
 def _is_article_boilerplate(block: str) -> bool:
     """True for shared article intros, not per-prospect scouting."""
     low = block.lower()
@@ -263,9 +361,8 @@ def _is_article_boilerplate(block: str) -> bool:
 
 
 def _wikipedia_extract_intro(title: str) -> str | None:
-    r = requests.get(
-        "https://en.wikipedia.org/w/api.php",
-        params={
+    data = _wikipedia_api_get(
+        {
             "action": "query",
             "format": "json",
             "prop": "extracts",
@@ -273,11 +370,10 @@ def _wikipedia_extract_intro(title: str) -> str | None:
             "explaintext": 1,
             "titles": title,
         },
-        timeout=15,
-        headers={"User-Agent": config.USER_AGENT},
+        timeout=15.0,
     )
-    r.raise_for_status()
-    data = r.json()
+    if not data:
+        return None
     q = (data.get("query") or {}).get("pages") or {}
     for _pid, page in q.items():
         ex = page.get("extract")
@@ -294,23 +390,18 @@ def wikipedia_intro(full_name: str) -> str | None:
     if len(q) < 3:
         return None
     for search in (f"{q} American basketball", q):
-        try:
-            r = requests.get(
-                "https://en.wikipedia.org/w/api.php",
-                params={
-                    "action": "opensearch",
-                    "search": search,
-                    "limit": 1,
-                    "namespace": 0,
-                    "format": "json",
-                },
-                timeout=12,
-                headers={"User-Agent": config.USER_AGENT},
-            )
-            r.raise_for_status()
-            data = r.json()
-        except (OSError, requests.RequestException) as exc:  # noqa: BLE001
-            log.info("Wikipedia opensearch for %r failed: %s", search, exc)
+        data = _wikipedia_api_get(
+            {
+                "action": "opensearch",
+                "search": search,
+                "limit": 1,
+                "namespace": 0,
+                "format": "json",
+            },
+            timeout=12.0,
+        )
+        if not data:
+            log.info("Wikipedia opensearch for %r returned no data", search)
             continue
         if len(data) < 2 or not data[1]:
             continue
