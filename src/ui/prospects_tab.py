@@ -2,6 +2,8 @@
 Prospects tab: all user-specified columns, per-cell color coding by
 provenance (scraped / combine / formula / manual-override), add-player
 dialog, remove-player button.
+
+UI-to-Console Bridge: Streamlit trigger for Xbox 360 virtual input.
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ import pandas as pd
 import streamlit as st
 
 from .. import audit, config, db
+from ..automation.controller_mapping import (
+    neutralize_virtual_stick,
+    push_prospect_row_to_controller,
+)
 from ..formulas import apply as fapply, registry as _registry
 from ..scrapers import espn_bigboard
 from . import common
@@ -28,6 +34,48 @@ PROVENANCE_COLORS = {
 }
 PROVENANCE_TEXT = "#1f1f1f"
 _CELL_STYLE = "background-color: {bg}; color: " + PROVENANCE_TEXT + ";"
+
+
+def _render_automation_sidebar() -> None:
+    """Sidebar: virtual Xbox 360 controller setup for PS5 Remote Play."""
+    with st.sidebar.expander("Automation Settings", expanded=False):
+        st.caption(
+            "Requires ViGEmBus. Initializes **one** ``vgamepad.VX360Gamepad`` "
+            "stored in session state."
+        )
+        st.toggle(
+            "Edit player mode (push bio/stats indices 0–33)",
+            value=False,
+            key="automation_edit_player_mode",
+        )
+        if st.button(
+            "Initialize Virtual Controller",
+            key="automation_init_vgamepad",
+        ):
+            try:
+                import vgamepad as vg
+
+                st.session_state["automation_gamepad"] = vg.VX360Gamepad()
+                st.success("Virtual controller ready.")
+            except OSError as e:
+                st.error(f"ViGEmBus / driver error: {e}")
+            except Exception as e:
+                st.error(f"Could not initialize virtual controller: {e}")
+
+
+def _prospect_series_to_controller_row(series: pd.Series) -> list:
+    """Build row list in ``PROSPECTS_TABLE_COLUMNS`` order; append potential at index 87."""
+    row_data: list = []
+    for col in config.PROSPECTS_TABLE_COLUMNS:
+        val = series.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            row_data.append(None)
+        else:
+            row_data.append(val)
+    pot = series.get("potential")
+    if pot is not None and not (isinstance(pot, float) and pd.isna(pot)):
+        row_data.append(pot)
+    return row_data
 
 
 def _provenance_for(slug: str, conn) -> dict[str, str]:
@@ -101,9 +149,9 @@ def _recompute_one(slug: str, manual_overrides: dict[str, int] | None = None) ->
             prospect, reg, manual_overrides=manual_overrides)
 
         cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-            "formula_version", "manual_override_json"]
+            "potential", "formula_version", "manual_override_json"]
         values = [slug] + [ratings.get(a) for a in config.RATING_ATTRIBUTES] + [
-            1, json.dumps(manual_overrides) if manual_overrides else None]
+            ratings.get("potential"), 1, json.dumps(manual_overrides) if manual_overrides else None]
         placeholders = ", ".join(["?"] * len(cols))
         sql = (
             f"INSERT INTO prospect_ratings_computed ({', '.join(cols)}) "
@@ -141,6 +189,8 @@ def render() -> None:
             "enable **Include prospects who match a current NBA roster player** "
             "if rows were filtered out.")
         return
+
+    _render_automation_sidebar()
 
     # Formula-trained sanity check: if no formula has samples, warn loudly.
     conn = db.connect()
@@ -333,7 +383,54 @@ def render() -> None:
         st.subheader("Remove player / override")
         slug_to_edit = st.selectbox(
             "Select prospect", sorted(df["slug"].tolist()),
+            key="prospect_management_slug",
         )
+
+        gp_for_push = st.session_state.get("automation_gamepad")
+        if st.button(
+            "Push to PS5",
+            type="primary",
+            key="automation_push_ps5",
+            help="Send the selected prospect row to the virtual Xbox 360 controller.",
+        ):
+            if gp_for_push is None:
+                st.warning(
+                    "Initialize **Virtual Controller** in **Sidebar → Automation Settings** "
+                    "first."
+                )
+            else:
+                row_series = df.loc[df["slug"] == slug_to_edit].iloc[0]
+                row_list = _prospect_series_to_controller_row(row_series)
+                prog = st.progress(0)
+                status = st.empty()
+                edit_mode = bool(
+                    st.session_state.get("automation_edit_player_mode", False))
+
+                def _on_progress(frac: float, msg: str) -> None:
+                    prog.progress(min(1.0, max(0.0, frac)))
+                    status.caption(msg)
+
+                try:
+                    push_prospect_row_to_controller(
+                        row_list,
+                        edit_player_mode=edit_mode,
+                        gamepad=gp_for_push,
+                        on_progress=_on_progress,
+                    )
+                    prog.progress(1.0)
+                    status.caption("Complete.")
+                    st.success("Push to PS5 finished.")
+                except OSError as e:
+                    prog.progress(1.0)
+                    status.caption("Stopped (driver error).")
+                    st.error(f"ViGEmBus / driver error: {e}")
+                except Exception as e:
+                    prog.progress(1.0)
+                    status.caption("Stopped (error).")
+                    st.error(f"Push to PS5 failed: {e}")
+                finally:
+                    neutralize_virtual_stick(gp_for_push)
+
         if st.button("Remove", type="secondary"):
             conn = db.connect()
             try:

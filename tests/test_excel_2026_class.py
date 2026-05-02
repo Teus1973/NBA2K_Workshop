@@ -118,3 +118,61 @@ def test_defense_not_extreme_for_sparse_prospect() -> None:
     assert 30 <= out["interior_defense_2k"] <= 80
     assert 35 <= out["perimeter_defense_2k"] <= 90
     assert out["perimeter_defense_2k"] - out["interior_defense_2k"] < 35
+
+
+def test_calculate_excel_2026_derived_ratings() -> None:
+    """Hand-checked against workbook spec formulas."""
+    from src.formulas.excel_2026_class import calculate_excel_2026_ratings
+
+    d = calculate_excel_2026_ratings({
+        "height_in": 78,
+        "age": 20,
+        "close_shot_2k": 70,
+        "post_control_2k": 50,
+        "mid_range_shot_2k": 60,
+        "shot_iq_2k": 55,
+        "hustle_2k": 70,
+        "offensive_consistency_2k": 60,
+        "defensive_consistency_2k": 50,
+        "overall_2k": 75,
+        "espn_rank": 10,
+    })
+    assert d["post_hook_2k"] == 64
+    assert d["post_fade_2k"] == 58
+    assert d["intangibles_2k"] == 60
+    assert d["durability_2k"] == 84
+    assert d["potential"] == 95
+
+    tall = calculate_excel_2026_ratings({
+        "height_in": 84,
+        "age": 19,
+        "close_shot_2k": 50,
+        "post_control_2k": 50,
+        "mid_range_shot_2k": 50,
+        "shot_iq_2k": 50,
+        "hustle_2k": 50,
+        "offensive_consistency_2k": 50,
+        "defensive_consistency_2k": 50,
+        "overall_2k": 80,
+    })
+    # (50*0.7 + 50*0.3) + 5 = 50 + 5 = 55
+    assert tall["post_hook_2k"] == 55
+
+
+def test_derived_potential_not_clamped() -> None:
+    from src.formulas.excel_2026_class import calculate_excel_2026_ratings
+
+    d = calculate_excel_2026_ratings({
+        "height_in": 78,
+        "age": 18,
+        "close_shot_2k": 99,
+        "post_control_2k": 99,
+        "mid_range_shot_2k": 99,
+        "shot_iq_2k": 99,
+        "hustle_2k": 99,
+        "offensive_consistency_2k": 99,
+        "defensive_consistency_2k": 99,
+        "overall_2k": 99,
+        "espn_rank": 1,
+    })
+    assert d["potential"] > 99

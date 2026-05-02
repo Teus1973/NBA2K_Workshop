@@ -80,12 +80,14 @@ LABEL_TO_ATTR: dict[str, str] = {
     # Rebounding
     "Offensive Rebound": "offensive_rebound_2k",
     "Defensive Rebound": "defensive_rebound_2k",
+    "Post Hook": "post_hook_2k",
+    "Post Fade": "post_fade_2k",
+    "Intangibles": "intangibles_2k",
+    "Overall Durability": "durability_2k",
 }
 
-# Labels we parse but don't persist (not in user's 33-attr list).
-EXTRA_LABELS: frozenset[str] = frozenset({
-    "Post Hook", "Post Fade", "Overall Durability", "Intangibles",
-})
+# Labels scraped but not mapped (e.g. section headers); kept for future extension.
+EXTRA_LABELS: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -297,7 +299,32 @@ def parse_html(html: str, slug: str) -> TwoKRatingsPlayer:
             out.attributes.setdefault(key, val)
         elif label in EXTRA_LABELS:
             out.extras.setdefault(label, val)
-        # else: unrecognised label (e.g. badge counts, intangibles summary).
+        # else: unrecognised label (e.g. section-only badges).
+
+    # Intangibles: rendered as a card-header title + badge (not d-flex / li).
+    if "intangibles_2k" not in out.attributes:
+        tip = soup.find(id="intangibles")
+        header = None
+        if tip is not None:
+            p = tip.find_parent("div")
+            while p is not None:
+                cls = p.get("class") or []
+                if "card-header" in cls:
+                    header = p
+                    break
+                p = p.find_parent("div")
+        if header is not None:
+            for box in header.find_all("span", class_=re.compile(r"\battribute-box\b")):
+                classes = " ".join(box.get("class") or [])
+                if "attribute-box-player" in classes:
+                    continue
+                try:
+                    val = int(box.get_text(strip=True))
+                except ValueError:
+                    continue
+                if 1 <= val <= 99:
+                    out.attributes.setdefault("intangibles_2k", val)
+                    break
 
     # Total Attributes -- the <span class="attribute-box total_attributes">.
     ta_span = soup.find("span", class_=re.compile(r"\btotal_attributes\b"))

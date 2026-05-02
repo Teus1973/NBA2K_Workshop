@@ -1,7 +1,7 @@
 """
 NBA2K26 Workshop — SQLite schema + connection helpers.
 
-Creates (idempotently) every table listed in PLAN.md section 2.1.
+Creates (idempotently) every table listed in Documents/PLAN.md section 2.1.
 All other modules go through :func:`connect` to obtain a ``sqlite3.Connection``
 with row-factory set to ``sqlite3.Row`` and foreign keys enabled.
 
@@ -21,7 +21,15 @@ from .logger import get_logger
 
 log = get_logger("db")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+# Integer rating columns added after v3 (workbook-aligned schema).
+_RATING_COLUMNS_V4: tuple[str, ...] = (
+    "post_hook_2k",
+    "post_fade_2k",
+    "intangibles_2k",
+    "durability_2k",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +62,7 @@ def cursor(db_path: Path | str | None = None) -> Iterator[sqlite3.Cursor]:
 # Schema
 # ---------------------------------------------------------------------------
 def _rating_columns_sql() -> str:
-    """Return `"overall_2k" INTEGER, "driving_layup_2k" INTEGER, ...` for the
-    33 user-specified attributes. Shared by ratings + ratings_computed."""
+    """Return ``"overall_2k" INTEGER, ...`` for :data:`config.RATING_ATTRIBUTES`."""
     return ",\n  ".join(
         f'"{attr}" INTEGER' for attr in config.RATING_ATTRIBUTES
     )
@@ -208,6 +215,7 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
     CREATE TABLE IF NOT EXISTS prospect_ratings_computed (
         slug              TEXT PRIMARY KEY,
         {_rating_columns_sql()},
+        potential         TEXT,
         formula_version   INTEGER,
         manual_override_json TEXT,       -- JSON object of user overrides per attribute
         computed_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -259,6 +267,16 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 )
 
 
+def _add_columns_if_missing(
+    cur: sqlite3.Cursor, table: str, definitions: list[tuple[str, str]],
+) -> None:
+    cur.execute(f"PRAGMA table_info({table})")
+    have = {row[1] for row in cur.fetchall()}
+    for col, sql_type in definitions:
+        if col not in have:
+            cur.execute(f'ALTER TABLE {table} ADD COLUMN "{col}" {sql_type}')
+
+
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     """Add columns on existing DBs and align ``schema_meta.version``."""
     cur = conn.cursor()
@@ -275,6 +293,15 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     if "scouting_physical_json" not in cols:
         cur.execute(
             "ALTER TABLE prospects ADD COLUMN scouting_physical_json TEXT")
+    _add_columns_if_missing(cur, "prospects", [("column1", "TEXT")])
+
+    new_ints = [(c, "INTEGER") for c in _RATING_COLUMNS_V4]
+    _add_columns_if_missing(cur, "nba_ratings_2k26", new_ints)
+    _add_columns_if_missing(cur, "prospect_ratings_computed", new_ints)
+    _add_columns_if_missing(cur, "prospect_ratings_computed", [
+        ("potential", "TEXT"),
+    ])
+
     row = cur.execute(
         "SELECT value FROM schema_meta WHERE key='version'",
     ).fetchone()

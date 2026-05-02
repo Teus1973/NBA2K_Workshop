@@ -59,6 +59,25 @@ def test_prospects_scouting_columns_migrated(temp_db):
     assert "scouting_physical_json" in cols
 
 
+def test_prospects_column1_migrated(temp_db):
+    cur = temp_db.execute("PRAGMA table_info(prospects)")
+    cols = {row[1] for row in cur.fetchall()}
+    assert "column1" in cols
+
+
+def test_prospect_ratings_potential_and_workbook_attrs(temp_db):
+    cur = temp_db.execute("PRAGMA table_info(prospect_ratings_computed)")
+    cols = {row[1] for row in cur.fetchall()}
+    assert "potential" in cols
+    for attr in (
+        "post_hook_2k",
+        "post_fade_2k",
+        "intangibles_2k",
+        "durability_2k",
+    ):
+        assert attr in cols, f"missing {attr}"
+
+
 def test_audit_log_insert(temp_db):
     from src import audit
     rid = audit.log_event(

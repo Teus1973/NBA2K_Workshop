@@ -31,5 +31,8 @@ google-auth-httplib2>=0.2.0
 # Scouting-report search (Requirement 4)
 duckduckgo-search>=6.0.0
 
+# PS5 Remote Play — virtual Xbox 360 (ViGEmBus). PyPI latest is 0.1.0 (no 0.1.2).
+vgamepad==0.1.0
+
 # Dev / testing
 pytest>=8.0.0

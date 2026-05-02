@@ -25,7 +25,7 @@ from . import data_loader
 log = get_logger("exporters.excel_writer")
 
 
-# Color palette for the Prospects sheet provenance coding (PLAN.md sec 2.2).
+# Color palette for the Prospects sheet provenance coding (Documents/PLAN.md sec 2.2).
 COLOR_SCRAPED = PatternFill("solid", fgColor="C6EFCE")  # green
 COLOR_COMBINE = PatternFill("solid", fgColor="BDD7EE")  # blue
 COLOR_FORMULA = PatternFill("solid", fgColor="FFEB9C")  # yellow

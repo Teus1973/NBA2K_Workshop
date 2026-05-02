@@ -2,7 +2,7 @@
 Fit v1 linear-regression formulas for every 2K26 attribute and write them as
 YAML files under ``data/formulas/``.
 
-Each YAML file has the exact shape documented in ``PLAN.md`` section 4.3::
+Each YAML file has the exact shape documented in ``Documents/PLAN.md`` section 4.3::
 
     attribute: strength_2k
     version: 1
@@ -54,7 +54,7 @@ class Recipe:
     notes: str | None = None
 
 
-# Section 4.2 of PLAN.md -- linear baseline. Exotic non-linearities can be
+# Section 4.2 of Documents/PLAN.md -- linear baseline. Exotic non-linearities can be
 # swapped in by editing the YAML later (formula-version bumps per rerun).
 RECIPES: tuple[Recipe, ...] = (
     # Physicals

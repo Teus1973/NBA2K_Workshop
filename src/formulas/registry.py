@@ -2,7 +2,7 @@
 Load YAML formulas from ``data/formulas/*.yaml`` into a registry that can
 evaluate them against a feature dict.
 
-The YAML shape is documented in PLAN.md section 4.3::
+The YAML shape is documented in Documents/PLAN.md section 4.3::
 
     attribute: strength_2k
     version: 1

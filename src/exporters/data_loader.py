@@ -256,27 +256,10 @@ def load_prospects_df(
     df = df.copy()
     df["height_ft"] = h_disp.apply(height_in_to_ft_str)
 
-    front = [
-        "espn_rank", "slug", "last_name", "first_name", "pos",
-        "school_or_team", "league", "age", "date_of_birth", "height_in", "height_ft",
-        "weight_lbs", "wingspan_in", "status",
-    ]
-    rating_cols = [c for c in config.RATING_ATTRIBUTES if c in df.columns]
-    stat_cols = [c for c in config.STAT_COLUMNS if c in df.columns]
-    combine_cols = [c for c in (
-        "height_wo_shoes_in", "height_w_shoes_in", "std_reach_in",
-        "body_fat_pct", "lane_agility_sec", "shuttle_sec",
-        "three_quarter_sprint_sec", "standing_vert_in", "max_vert_in",
-        "bench_reps", "c_speed_2k", "c_speed_with_ball_2k",
-        "c_vertical_2k", "c_agility_2k",
-    ) if c in df.columns]
-    # Stats before long rating block so per-game numbers stay visible when scrolling.
-    order = (
-        [c for c in front if c in df.columns] + stat_cols + rating_cols
-        + combine_cols
-    )
-    rest = [c for c in df.columns if c not in order]
-    out = df[order + rest].copy()
+    # Fixed 87-column workbook order + any extra DB columns after.
+    preferred = [c for c in config.PROSPECTS_TABLE_COLUMNS if c in df.columns]
+    rest = [c for c in df.columns if c not in preferred]
+    out = df[preferred + rest].copy()
     if "espn_rank" in out.columns:
         out = out.sort_values("espn_rank", na_position="last")
     return round_float_columns_for_display(out)

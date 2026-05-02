@@ -807,6 +807,75 @@ def compute_attribute_dict(
     return {k: st[k] for k in _ATTR_ORDER if k in st}
 
 
+def calculate_excel_2026_ratings(player_data: dict) -> dict:
+    """Derive workbook-aligned post game, intangibles, durability, and potential."""
+    # Logic aligned with prospects 2026 (1).xlsx index mapping
+    def _num(key: str, default: float = 0.0) -> float:
+        v = player_data.get(key)
+        if v is None:
+            return default
+        try:
+            x = float(v)
+            if math.isnan(x) or math.isinf(x):
+                return default
+            return x
+        except (TypeError, ValueError):
+            return default
+
+    height_in = _num("height_in")
+    age = _num("age", 19.0)
+    close_s = _num("close_shot_2k", 60.0)
+    post_c = _num("post_control_2k", 60.0)
+    mid_r = _num("mid_range_shot_2k", 60.0)
+    shot_iq = _num("shot_iq_2k", 60.0)
+    hustle = _num("hustle_2k", 60.0)
+    off_c = _num("offensive_consistency_2k", 60.0)
+    def_c = _num("defensive_consistency_2k", 60.0)
+    overall_2k = _num("overall_2k", 60.0)
+
+    if height_in >= 84:
+        height_mod = 5.0
+    elif height_in >= 82:
+        height_mod = 3.0
+    else:
+        height_mod = 0.0
+
+    post_hook_f = (close_s * 0.7) + (post_c * 0.3) + height_mod
+    post_fade_f = (mid_r * 0.75) + (post_c * 0.25)
+    avg_consistency = (off_c + def_c) / 2.0
+    intangibles_f = (
+        (shot_iq * 0.35) + (hustle * 0.35) + (avg_consistency * 0.30)
+    )
+
+    years_over_19 = max(0.0, age - 19.0)
+    durability_f = 85.0 - (1.5 * years_over_19)
+
+    rank = player_data.get("espn_rank")
+    if rank is None:
+        rank_term = 0.0
+    else:
+        try:
+            rank_term = (100.0 - float(rank)) * 0.12
+        except (TypeError, ValueError):
+            rank_term = 0.0
+        if math.isnan(rank_term) or math.isinf(rank_term):
+            rank_term = 0.0
+
+    age_gap = (24.0 - age) * 2.2
+    potential_f = overall_2k + age_gap + rank_term
+
+    def _clamp_attr(x: float) -> int:
+        return int(max(25, min(99, round(x))))
+
+    return {
+        "post_hook_2k": _clamp_attr(post_hook_f),
+        "post_fade_2k": _clamp_attr(post_fade_f),
+        "intangibles_2k": _clamp_attr(intangibles_f),
+        "durability_2k": _clamp_attr(durability_f),
+        "potential": int(round(potential_f)),
+    }
+
+
 def apply_excel_2026_to_prospect(
     prospect: Mapping[str, Any],
     registry: FormulaRegistry,
@@ -820,6 +889,12 @@ def apply_excel_2026_to_prospect(
     else:
         out["overall_2k"] = int(
             max(25, min(99, round(sum(base.values()) / max(1, len(base))))))
+    merged: dict[str, Any] = dict(prospect)
+    merged.update(out)
+    derived = calculate_excel_2026_ratings(merged)
+    out.update(derived)
     prov = {k: "excel_2026" for k in out}
     prov["overall_2k"] = "excel_2026+overall_yaml"
+    for k in derived:
+        prov[k] = "excel_2026+derived"
     return out, prov

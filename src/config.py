@@ -187,42 +187,48 @@ def set_rating_engine(name: str) -> None:
     except OSError:
         _rating_engine_mtimes = 0.0
 
-# The user's requested attribute list (section 2.2 of PLAN.md).
-# Ordering here is the canonical column order for every exporter and UI table.
+# Rating columns in **prospects 2026 (1).xlsx** order (sheet ``prospects``, row 1).
+# Block is columns 35–71: ``overall_2k`` first, workbook-specific attribute order,
+# then ``post_hook_2k`` / ``post_fade_2k`` and ``intangibles_2k`` / ``durability_2k``.
+# :mod:`src.formulas.apply` still evaluates ``overall_2k`` after sub-attributes.
 RATING_ATTRIBUTES: tuple[str, ...] = (
     "overall_2k",
     "driving_layup_2k",
-    "post_control_2k",
-    "draw_foul_2k",
+    "standing_dunk_2k",
+    "driving_dunk_2k",
     "close_shot_2k",
     "mid_range_shot_2k",
     "three_point_shot_2k",
     "free_throws_2k",
+    "post_hook_2k",
+    "post_fade_2k",
+    "post_control_2k",
+    "draw_foul_2k",
     "ball_handle_2k",
-    "pass_iq_2k",
-    "pass_accuracy_2k",
-    "offensive_rebound_2k",
-    "standing_dunk_2k",
-    "driving_dunk_2k",
-    "shot_iq_2k",
-    "pass_vision_2k",
+    "speed_with_ball_2k",
     "hands_2k",
-    "defensive_rebound_2k",
+    "pass_accuracy_2k",
+    "pass_iq_2k",
+    "pass_vision_2k",
+    "offensive_consistency_2k",
     "interior_defense_2k",
     "perimeter_defense_2k",
-    "block_2k",
     "steal_2k",
-    "speed_2k",
-    "speed_with_ball_2k",
-    "vertical_2k",
-    "strength_2k",
-    "stamina_2k",
-    "hustle_2k",
-    "agility_2k",
+    "block_2k",
+    "offensive_rebound_2k",
+    "defensive_rebound_2k",
+    "help_defense_iq_2k",
     "pass_perception_2k",
     "defensive_consistency_2k",
-    "help_defense_iq_2k",
-    "offensive_consistency_2k",
+    "speed_2k",
+    "agility_2k",
+    "strength_2k",
+    "vertical_2k",
+    "stamina_2k",
+    "intangibles_2k",
+    "shot_iq_2k",
+    "hustle_2k",
+    "durability_2k",
 )
 
 # Human-readable attribute display names (for UI + export headers).
@@ -260,6 +266,10 @@ RATING_DISPLAY_NAMES: dict[str, str] = {
     "defensive_consistency_2k": "Defensive Consistency 2K",
     "help_defense_iq_2k": "Help Defense IQ 2K",
     "offensive_consistency_2k": "Offensive Consistency 2K",
+    "post_hook_2k": "Post Hook 2K",
+    "post_fade_2k": "Post Fade 2K",
+    "intangibles_2k": "Intangibles 2K",
+    "durability_2k": "Durability 2K",
 }
 
 # Combine-derived "C *" columns (user spec 2.2.iii).
@@ -279,6 +289,43 @@ STAT_COLUMNS: tuple[str, ...] = (
     "ftm", "fta", "ft_pct",
     "oreb", "dreb", "reb",
     "ast", "tov", "stl", "blk", "pf",
+)
+
+# Prospects sheet / Streamlit: 87-column order matching ``prospects 2026 (1).xlsx``
+# (bio 1–14, stats 15–34, ratings 35–71, meta 72–87). ``potential`` and combine
+# leftovers follow in :func:`load_prospects_df` remainder after these names.
+PROSPECTS_TABLE_COLUMNS: tuple[str, ...] = (
+    "espn_rank",
+    "slug",
+    "last_name",
+    "first_name",
+    "pos",
+    "school_or_team",
+    "league",
+    "age",
+    "date_of_birth",
+    "height_in",
+    "height_ft",
+    "weight_lbs",
+    "wingspan_in",
+    "status",
+) + STAT_COLUMNS + RATING_ATTRIBUTES + (
+    "full_name",
+    "other_rank",
+    "added_by",
+    "notes",
+    "updated_at",
+    "scouting_ai_summary",
+    "scouting_physical_text",
+    "scouting_physical_json",
+    "season",
+    "league_stats",
+    "source",
+    "updated_at_stats",
+    "formula_version",
+    "manual_override_json",
+    "computed_at",
+    "column1",
 )
 
 LEAGUE_NCAA = "ncaa"

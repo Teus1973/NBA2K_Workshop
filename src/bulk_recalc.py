@@ -4,10 +4,14 @@ Bulk prospect rating recompute: single DB session + optional progress callback.
 Used from Settings, Formulas, and CLI so Streamlit can show a progress bar
 instead of a long silent hang.
 
-Writes all rating rows in **one SQLite transaction**. With ``isolation_level=None``
-(autocommit), the previous per-row ``execute`` forced a fsync each time, which on
-Windows could make recompute take many minutes and look “stuck”. A single
-``BEGIN … COMMIT`` batch is dramatically faster.
+Writes all rating rows in **one SQLite transaction** (``BEGIN IMMEDIATE`` …
+``COMMIT``) against :func:`db.connect`'s autocommit connection so Windows
+fsync storm is avoided.
+
+Schema **v4** ``prospect_ratings_computed`` column order is driven by
+:data:`config.RATING_ATTRIBUTES` (37 ints) then ``potential`` (TEXT), matching
+workbook export names for ``intangibles_2k`` / ``durability_2k`` (e.g. Excel
+headers *Integnagbles* / *Durablity*) via the same snake_case DB fields.
 
 The optional ``progress_cb`` is **throttled** (~20 calls per run) so Streamlit is
 not flooded with ``st.progress`` updates (which can freeze the UI).
@@ -79,12 +83,20 @@ def recompute_prospect_ratings(
                         progress_cb(i, total, slug)
                     except Exception as exc:  # noqa: BLE001
                         log.debug("progress_cb: %s", exc)
-                ratings, _ = fapply.apply_to_prospect(row.to_dict(), reg)
+                ratings, _ = fapply.apply_formulas(
+                    row.to_dict(),
+                    config.get_rating_engine(),
+                    registry=reg,
+                )
+                # v4: slug + RATING_ATTRIBUTES (37) + potential + meta
                 cols = ["slug"] + list(config.RATING_ATTRIBUTES) + [
-                    "formula_version", "manual_override_json"
+                    "potential", "formula_version", "manual_override_json",
                 ]
+                pot = ratings.get("potential")
+                if pot is not None:
+                    pot = int(round(float(pot)))
                 values = [slug] + [ratings.get(a) for a in config.RATING_ATTRIBUTES] + [
-                    1, None
+                    pot, 1, None,
                 ]
                 placeholders = ", ".join(["?"] * len(cols))
                 sql = (

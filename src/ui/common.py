@@ -15,14 +15,23 @@ from ..exporters import data_loader
 
 
 # ---------------------------------------------------------------------------
-def pinned_name_column_config() -> dict[str, object]:
-    """Pin last / first name so they stay visible during horizontal scroll."""
+def prospects_table_column_config() -> dict[str, object]:
+    """Pin leading workbook columns (rank, slug, names) during horizontal scroll."""
     return {
+        "espn_rank": st.column_config.NumberColumn(
+            "ESPN rank", pinned=True, format="%d", width="small",
+        ),
+        "slug": st.column_config.TextColumn("Slug", pinned=True, width="small"),
         "last_name": st.column_config.TextColumn(
             "Last Name", pinned=True, width="medium"),
         "first_name": st.column_config.TextColumn(
             "First Name", pinned=True, width="medium"),
     }
+
+
+def pinned_name_column_config() -> dict[str, object]:
+    """Backward-compatible alias; prefer :func:`prospects_table_column_config`."""
+    return prospects_table_column_config()
 
 
 # ---------------------------------------------------------------------------
