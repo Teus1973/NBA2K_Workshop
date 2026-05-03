@@ -1,6 +1,56 @@
-**Last updated: 2026-05-02**
+**Last updated: 2026-05-03**
 
 # NBA2K26 Rookie Rating Tool — Release Notes
+
+## v0.6.2 — 2026-05-03
+
+### Vision Lab, OCR tooling, and export UX
+
+- **Vision Lab** tab (`src/ui/vision_lab_tab.py`): split-pane workstation to capture the **Chiaki-ng** Remote Play window, nudge an **OCR ROI** relative to that window, and preview **Tesseract** reads alongside context/zoom thumbnails (session-backed ROI aligns with automation overrides).
+- **Dependencies** (`requirements.txt`): **`mss`**, **`pygetwindow`**, **`Pillow`**, **`pytesseract`** — install **[Tesseract OCR for Windows](https://github.com/UB-Mannheim/tesseract/wiki)** and ensure it is on **`PATH`** for OCR preview and capture helpers.
+- **Automation** (`src/automation/controller_mapping.py`): Chiaki window resolution helpers, OCR preview/calibration utilities, and expanded controller/OCR integration tests (`tests/test_controller_mapping.py`, `tests/test_chiaki_window_resolve.py`).
+- **Workbook export** (`src/ui/workbook_export.py`): shared **Excel / Google Sheets** build section with per-tab **`slot`** keys and cached `.xlsx` bytes; wired from **Settings** and **Prospects** so downloads survive reruns. Clears cached export after DB mutations.
+- **Excel / Google Sheets writers**: workbook layout updates including a ratings-focused **Prospects** sheet for download (freeze row 1 / columns A–B); Google Sheets parity where applicable (`tests/test_excel_prospects_download_columns.py`).
+- **Config / schema polish**: workbook column parity and **`team_total_games`**-related scrape fixes remain documented under v0.5.0 notes.
+
+---
+
+## v0.6.1 — 2026-05-03
+
+### Stick persistence and navigation settle
+
+- **Left stick hold**: rating pulses keep the deflected stick for **0.1 s** after `update()` before neutralizing, so Chiaki-ng / 2K registers the value reliably.
+- **D-pad menu step**: after each rating applied in the **87-column** loop, a **D-pad Down** press/release (**0.05 s** hold, **0.15 s** post-release settle) advances the in-game editor row.
+- **Overall anchor (index 34)**: in-loop check that column **34** is still **`overall_2k`**, plus an **extra 0.3 s** settle after the existing **0.5 s** pause so the cursor animation can finish before the first stick push.
+
+---
+
+## v0.5.1 — 2026-05-03
+
+### Hotfix: vgamepad API alignment and Chiaki-ng stability throttling
+
+- **vgamepad**: left stick moves use **positional** `left_joystick_float(x, y)` calls (not `x_value` / `y_value` keywords) for API compatibility.
+- **Chiaki-ng / Remote Play**: **0.15 s** spacing after each column step; **buffer flush** every **10** columns (`gamepad.update()` + **0.4 s** pause) to reduce input buffer overflows.
+- **Overall anchor (index 34)**: **0.5 s** settle time after navigation and before the first stick value push so the PS5 menu can settle on **Overall**.
+- **Schema v6 menu literals**: runtime checks keep **Integnagbles** tied to **`intangibles_2k` at index 68** and **Durablity** to **`durability_2k` at index 70** (0-based sheet column; durability is not index 71 in this schema).
+
+---
+
+## v0.5.0 — 2026-05-02
+
+### Highlights
+
+- **Availability-adjusted durability** (Excel 2026 class engine): `durability_2k` now subtracts an **availability penalty** from games-played vs **team total games** (`gp_ratio = gp / team_total_games`; below 90% attendance applies `(0.90 - gp_ratio) * 40`). Base remains `85 - 1.5 * max(0, age - 19)`, clamped **[25, 99]** after rounding.
+- **Schema v6**: `team_total_games` (**INTEGER**) on `prospect_stats` and `nba_stats_season`. The **stats band** (indices 14–33) gains `team_total_games` immediately after `gp`; **`pf` is no longer in that band** so **`overall_2k` stays at index 34** (controller automation literals **Durablity** / **Integnagbles** unchanged).
+
+### Data / scrapers
+
+- **Sports-Reference CBB**: resolves **team total games** from the school season roster page (**max games** column); falls back to the player’s **gp** when the school page is missing or ambiguous.
+- **ESPN men’s CBB**: persists `team_total_games` (defaults to **gp** until a richer team schedule signal exists); **resolver** fixed so multi-hit name search actually walks candidates and matches **school**.
+- **NBA `nba_api` league totals**: `team_total_games` = **max GP on that TEAM_ID** for the season (same fallback intent as roster max).
+- **International / Proballers**: `team_total_games` defaults to **gp** when no team schedule is available.
+
+---
 
 ## v0.4.0 — 2026-05-02
 

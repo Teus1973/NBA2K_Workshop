@@ -187,9 +187,31 @@ def set_rating_engine(name: str) -> None:
     except OSError:
         _rating_engine_mtimes = 0.0
 
-# Rating columns in **prospects 2026 (1).xlsx** order (sheet ``prospects``, row 1).
-# Block is columns 35–71: ``overall_2k`` first, workbook-specific attribute order,
-# then ``post_hook_2k`` / ``post_fade_2k`` and ``intangibles_2k`` / ``durability_2k``.
+# Column sequence updated to match prospects (1) template.xlsx
+
+# Leading prospect block (14 cols). Physicals-first through ``weight_lbs``, then IDs /
+# school / bio through ``status``. ``height_ft`` remains computed in the loader but is
+# not part of the canonical **87** so ``overall_2k`` stays at index **34** (column AI).
+PROSPECTS_BIO_COLUMNS: tuple[str, ...] = (
+    "pos",
+    "secondary_position",
+    "age",
+    "height_in",
+    "weight_lbs",
+    "espn_rank",
+    "slug",
+    "last_name",
+    "first_name",
+    "school_or_team",
+    "league",
+    "date_of_birth",
+    "wingspan_in",
+    "status",
+)
+
+# Rating columns in ``prospects (1) template.xlsx`` order: ``shot_iq_2k`` follows
+# ``draw_foul_2k``; ends with ``intangibles_2k`` / ``hustle_2k`` / ``durability_2k``
+# (automation literals **Integnagbles** / **Durablity** remain in ``controller_mapping``).
 # :mod:`src.formulas.apply` still evaluates ``overall_2k`` after sub-attributes.
 RATING_ATTRIBUTES: tuple[str, ...] = (
     "overall_2k",
@@ -204,6 +226,7 @@ RATING_ATTRIBUTES: tuple[str, ...] = (
     "post_fade_2k",
     "post_control_2k",
     "draw_foul_2k",
+    "shot_iq_2k",
     "ball_handle_2k",
     "speed_with_ball_2k",
     "hands_2k",
@@ -226,7 +249,6 @@ RATING_ATTRIBUTES: tuple[str, ...] = (
     "vertical_2k",
     "stamina_2k",
     "intangibles_2k",
-    "shot_iq_2k",
     "hustle_2k",
     "durability_2k",
 )
@@ -281,35 +303,22 @@ COMBINE_ATTRIBUTES: tuple[str, ...] = (
     "c_wingspan_in",
 )
 
-# Stats columns the user listed (section 2.2.ii).
+# Stats band (20 cols, indices 14–33): ``team_total_games`` follows ``gp`` for
+# availability / durability (see :mod:`src.formulas.excel_2026_class`). Personal
+# fouls per game are no longer in this band so ``overall_2k`` stays at index **34**.
 STAT_COLUMNS: tuple[str, ...] = (
-    "gp", "min", "pts",
+    "gp", "team_total_games", "min", "pts",
     "fgm", "fga", "fg_pct",
     "fg3m", "fg3a", "fg3_pct",
     "ftm", "fta", "ft_pct",
     "oreb", "dreb", "reb",
-    "ast", "tov", "stl", "blk", "pf",
+    "ast", "tov", "stl", "blk",
 )
 
-# Prospects sheet / Streamlit: 87-column order matching ``prospects 2026 (1).xlsx``
-# (bio 1–14, stats 15–34, ratings 35–71, meta 72–87). ``potential`` and combine
-# leftovers follow in :func:`load_prospects_df` remainder after these names.
-PROSPECTS_TABLE_COLUMNS: tuple[str, ...] = (
-    "espn_rank",
-    "slug",
-    "last_name",
-    "first_name",
-    "pos",
-    "school_or_team",
-    "league",
-    "age",
-    "date_of_birth",
-    "height_in",
-    "height_ft",
-    "weight_lbs",
-    "wingspan_in",
-    "status",
-) + STAT_COLUMNS + RATING_ATTRIBUTES + (
+# Prospects sheet / Streamlit: 87-column order (bio + stats + ratings + meta).
+# Optional ``potential`` (template col 88) lives in ``prospect_ratings_computed`` and
+# may trail in :func:`load_prospects_df` after these names.
+PROSPECTS_META_COLUMNS: tuple[str, ...] = (
     "full_name",
     "other_rank",
     "added_by",
@@ -326,6 +335,10 @@ PROSPECTS_TABLE_COLUMNS: tuple[str, ...] = (
     "manual_override_json",
     "computed_at",
     "column1",
+)
+
+PROSPECTS_TABLE_COLUMNS: tuple[str, ...] = (
+    PROSPECTS_BIO_COLUMNS + STAT_COLUMNS + RATING_ATTRIBUTES + PROSPECTS_META_COLUMNS
 )
 
 LEAGUE_NCAA = "ncaa"

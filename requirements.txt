@@ -34,5 +34,11 @@ duckduckgo-search>=6.0.0
 # PS5 Remote Play — virtual Xbox 360 (ViGEmBus). PyPI latest is 0.1.0 (no 0.1.2).
 vgamepad==0.1.0
 
+# Remote Play OCR (Chiaki-ng window capture + ratings read). Install Tesseract OCR for Windows PATH.
+mss>=9.0.0
+pygetwindow>=0.0.9
+Pillow>=10.2.0
+pytesseract>=0.3.10
+
 # Dev / testing
 pytest>=8.0.0

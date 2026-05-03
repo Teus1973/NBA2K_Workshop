@@ -51,6 +51,7 @@ def test_statistics_to_prospect_stats_requires_gp() -> None:
         season_display="2025-26",
     )
     assert row["gp"] == 5
+    assert row["team_total_games"] == 5
     assert row["min"] == 28.0
     assert row["_stats_source"] == "espn-mcb"
 

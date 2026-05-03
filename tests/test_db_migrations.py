@@ -32,6 +32,10 @@ def test_stat_columns_present(temp_db):
     for stat in config.STAT_COLUMNS:
         assert stat in cols, f"missing stat column {stat}"
 
+    cur_ps = temp_db.execute("PRAGMA table_info(prospect_stats)")
+    ps_cols = {row[1] for row in cur_ps.fetchall()}
+    assert "team_total_games" in ps_cols
+
 
 def test_connect_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
@@ -63,6 +67,12 @@ def test_prospects_column1_migrated(temp_db):
     cur = temp_db.execute("PRAGMA table_info(prospects)")
     cols = {row[1] for row in cur.fetchall()}
     assert "column1" in cols
+
+
+def test_prospects_secondary_position_migrated(temp_db):
+    cur = temp_db.execute("PRAGMA table_info(prospects)")
+    cols = {row[1] for row in cur.fetchall()}
+    assert "secondary_position" in cols
 
 
 def test_prospect_ratings_potential_and_workbook_attrs(temp_db):

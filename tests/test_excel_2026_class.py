@@ -127,6 +127,8 @@ def test_calculate_excel_2026_derived_ratings() -> None:
     d = calculate_excel_2026_ratings({
         "height_in": 78,
         "age": 20,
+        "gp": 25,
+        "team_total_games": 25,
         "close_shot_2k": 70,
         "post_control_2k": 50,
         "mid_range_shot_2k": 60,
@@ -142,6 +144,23 @@ def test_calculate_excel_2026_derived_ratings() -> None:
     assert d["intangibles_2k"] == 60
     assert d["durability_2k"] == 84
     assert d["potential"] == 95
+
+    low_avail = calculate_excel_2026_ratings({
+        "height_in": 78,
+        "age": 19,
+        "gp": 18,
+        "team_total_games": 40,
+        "close_shot_2k": 50,
+        "post_control_2k": 50,
+        "mid_range_shot_2k": 50,
+        "shot_iq_2k": 50,
+        "hustle_2k": 50,
+        "offensive_consistency_2k": 50,
+        "defensive_consistency_2k": 50,
+        "overall_2k": 70,
+    })
+    # ratio 0.45 → penalty (0.9 - 0.45) * 40 = 18; age 19 → 85 - 18 = 67
+    assert low_avail["durability_2k"] == 67
 
     tall = calculate_excel_2026_ratings({
         "height_in": 84,

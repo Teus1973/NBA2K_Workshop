@@ -22,6 +22,7 @@ from src.ui import (
     reference_tab,
     scouting_tab,
     settings_tab,
+    vision_lab_tab,
 )
 
 log = get_logger("app")
@@ -98,7 +99,7 @@ def main() -> None:
         common.render_main_rating_engine()
 
     tabs = st.tabs([
-        "Reference", "Prospects", "Scouting",
+        "Reference", "Prospects", "Vision Lab", "Scouting",
         "Europeans", "Formulas", "Logs", "Settings",
     ])
     with tabs[0]:
@@ -106,14 +107,16 @@ def main() -> None:
     with tabs[1]:
         prospects_tab.render()
     with tabs[2]:
-        scouting_tab.render()
+        vision_lab_tab.render()
     with tabs[3]:
-        europe_tab.render()
+        scouting_tab.render()
     with tabs[4]:
-        formulas_tab.render()
+        europe_tab.render()
     with tabs[5]:
-        logs_tab.render()
+        formulas_tab.render()
     with tabs[6]:
+        logs_tab.render()
+    with tabs[7]:
         settings_tab.render()
 
 

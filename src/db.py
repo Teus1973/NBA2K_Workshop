@@ -21,7 +21,7 @@ from .logger import get_logger
 
 log = get_logger("db")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 # Integer rating columns added after v3 (workbook-aligned schema).
 _RATING_COLUMNS_V4: tuple[str, ...] = (
@@ -70,10 +70,11 @@ def _rating_columns_sql() -> str:
 
 def _stat_columns_sql() -> str:
     """Return stat columns (REAL). All nullable."""
-    # gp is int, rest are REAL to keep percentages + per-game totals
+    # Integer counters; remainder REAL for percentages + per-game totals.
     cols = []
+    int_stats = frozenset({"gp", "team_total_games"})
     for stat in config.STAT_COLUMNS:
-        sql_type = "INTEGER" if stat == "gp" else "REAL"
+        sql_type = "INTEGER" if stat in int_stats else "REAL"
         cols.append(f'"{stat}" {sql_type}')
     return ",\n  ".join(cols)
 
@@ -294,12 +295,21 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         cur.execute(
             "ALTER TABLE prospects ADD COLUMN scouting_physical_json TEXT")
     _add_columns_if_missing(cur, "prospects", [("column1", "TEXT")])
+    _add_columns_if_missing(cur, "prospects", [
+        ("secondary_position", "TEXT"),
+    ])
 
     new_ints = [(c, "INTEGER") for c in _RATING_COLUMNS_V4]
     _add_columns_if_missing(cur, "nba_ratings_2k26", new_ints)
     _add_columns_if_missing(cur, "prospect_ratings_computed", new_ints)
     _add_columns_if_missing(cur, "prospect_ratings_computed", [
         ("potential", "TEXT"),
+    ])
+    _add_columns_if_missing(cur, "prospect_stats", [
+        ("team_total_games", "INTEGER"),
+    ])
+    _add_columns_if_missing(cur, "nba_stats_season", [
+        ("team_total_games", "INTEGER"),
     ])
 
     row = cur.execute(

@@ -65,6 +65,7 @@ MIN_HTML = """
 def test_parse_bbintl_prefers_matching_season() -> None:
     row = parse_bbintl_totals_per_game(MIN_HTML, season_display="2025-26")
     assert row.get("gp") == 31
+    assert row.get("team_total_games") == 31
     assert row.get("season") == "2025-26"
     assert abs((row.get("pts") or 0) - 11.9355) < 0.02
     assert row.get("_stats_source") == "basketball-reference-intl"

@@ -1,4 +1,4 @@
-**Last updated: 2026-05-02**
+**Last updated: 2026-05-03**
 
 # NBA2K26 Rookie Rating Tool — Roadmap
 
@@ -10,7 +10,8 @@
 - **UI**: Streamlit, mirroring `k:\work\SubtitleForge` patterns (`src/config.py`, `src/logger.py`, `.env` via `python-dotenv`, per-user data under `%APPDATA%\NBA2KWorkshop`).
 - **Primary ratings source**: `2kratings.com` scrape (1 req/sec, cached). Local CSV override supported as override pathway.
 - **Storage**: SQLite DB (`data/workshop.db`) for reference ratings, combine, stats, audit log — pattern borrowed from Chronos (`c:\work\time-travel\Chronos\Python\chronos_logs.db`).
-- **Prospects sheet**: **87-column** framework (`PROSPECTS_TABLE_COLUMNS` in `src/config.py`) plus optional **`potential`** after column **87** where automation applies.
+- **Prospects sheet**: **87-column** framework (`PROSPECTS_TABLE_COLUMNS` in `src/config.py`) plus optional **`potential`** as column **88** in **`prospects (1) template.xlsx`** (stored in `prospect_ratings_computed`). Column order tracks that workbook: physical-led bio (`pos`, `secondary_position`, `age`, `height_in`, `weight_lbs`, …), **`overall_2k`** locked at index **34** (Excel **AI**), **`shot_iq_2k`** immediately after **`draw_foul_2k`**. **`height_ft`** remains a computed display column outside the canonical **87** so rating offsets stay aligned. Automation navigation literals **Integnagbles** and **Durablity** stay wired in `src/automation/controller_mapping.py`.
+- **Remote Play / OCR calibration**: optional **Chiaki-ng** window capture with **Vision Lab** (`src/ui/vision_lab_tab.py`) to align a **Tesseract** ROI relative to the stream window; OCR helpers live alongside virtual gamepad automation in `src/automation/controller_mapping.py`.
 
 ## 1. Reusable scaffolding
 
@@ -40,10 +41,16 @@
 ### 2.2 Output spreadsheet
 
 - **Reference** — all rostered NBA players (ground-truth).
-- **Prospects** — top 120 for 2026 draft (**87-column** header order).
+- **Prospects** — top 120 for 2026 draft (**87-column** canonical headers aligned with **`prospects (1) template.xlsx`**; Excel/GSheet exports apply Focus Mode hides without dropping cells).
 - **Europeans** — (Euro roadmap) Euroleague.
 - **Logs** — readable audit log (newest-first).
 - **Formulas** — YAML + coefficients embedded.
+
+### 2.3 Prospects workbook parity (`prospects (1) template.xlsx`)
+
+- Bio prefix leads with **`pos`**, **`secondary_position`**, **`age`**, **`height_in`**, **`weight_lbs`**, then identifiers through **`status`** (14 cols before **`STAT_COLUMNS`**).
+- Ratings match workbook order (**`shot_iq_2k`** follows **`draw_foul_2k`**); **`overall_2k`** remains column **AI** (index **34**).
+- **`height_ft`** is still computed for tables/CSV but excluded from **`PROSPECTS_TABLE_COLUMNS`** so **`overall_2k`** anchor stays stable.
 
 ## 3. Scraping strategy
 

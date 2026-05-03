@@ -808,7 +808,12 @@ def compute_attribute_dict(
 
 
 def calculate_excel_2026_ratings(player_data: dict) -> dict:
-    """Derive workbook-aligned post game, intangibles, durability, and potential."""
+    """Derive workbook-aligned post game, intangibles, durability, and potential.
+
+    Durability uses attendance vs ``team_total_games`` (availability penalty below
+    90% ``gp`` ratio); ``Durablity`` / automation spelling stays in
+    :mod:`src.automation.controller_mapping`.
+    """
     # Logic aligned with prospects 2026 (1).xlsx index mapping
     def _num(key: str, default: float = 0.0) -> float:
         v = player_data.get(key)
@@ -848,7 +853,20 @@ def calculate_excel_2026_ratings(player_data: dict) -> dict:
     )
 
     years_over_19 = max(0.0, age - 19.0)
-    durability_f = 85.0 - (1.5 * years_over_19)
+
+    gp = max(0.0, _num("gp"))
+    ttg_raw = _num("team_total_games")
+    ttg = float(ttg_raw) if ttg_raw > 0 else (gp if gp > 0 else 0.0)
+    if gp <= 0 or ttg <= 0:
+        gp_ratio = 1.0
+    else:
+        gp_ratio = min(1.0, gp / ttg)
+    if gp_ratio >= 0.90:
+        avail_penalty = 0.0
+    else:
+        avail_penalty = (0.90 - gp_ratio) * 40.0
+
+    durability_f = 85.0 - (1.5 * years_over_19) - avail_penalty
 
     rank = player_data.get("espn_rank")
     if rank is None:

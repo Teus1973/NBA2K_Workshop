@@ -1,4 +1,4 @@
-**Last updated: 2026-05-02**
+**Last updated: 2026-05-03**
 
 # NBA2K26 Rookie Rating Tool (NBA2K Workshop)
 
@@ -28,7 +28,8 @@ Copy-Item .env.example .env
 
 1. Install **ViGEmBus** on Windows (virtual Xbox 360 controller driver used by Remote Play tooling).
 2. `requirements.txt` pins **`vgamepad`** — installed with `pip install -r requirements.txt`. Without ViGEmBus, **Initialize Virtual Controller** in the Prospects sidebar will surface a driver error.
-3. Launch the app, open **Prospects**, expand **Sidebar → Automation Settings**, initialize the controller once per session, then use **Push to PS5** for the selected prospect row (**87-column** framework plus optional **potential** at meta column **88**).
+3. For **Vision Lab** (Chiaki window capture + OCR preview), install **Tesseract OCR for Windows** and add it to **`PATH`**; Python deps **`mss`**, **`pygetwindow`**, **`Pillow`**, and **`pytesseract`** ship with `requirements.txt`.
+4. Launch the app, open **Prospects**, expand **Sidebar → Automation Settings**, initialize the controller once per session, then use **Push to PS5** for the selected prospect row (**87-column** framework plus optional **potential** at meta column **88**). Use **Vision Lab** to tune the OCR crop when validating Remote Play feedback.
 
 **Every other time** — double-click the launcher script, or run the packaged Windows binary when present:
 
@@ -69,7 +70,8 @@ Tweak the launcher with env vars (in `.env` or your shell):
 The app opens at `http://localhost:8506` with the following tabs:
 
 - **Reference** — current NBA players with 2025-26 stats, combine measurements, and scraped 2K26 ratings (ground-truth dataset).
-- **Prospects** — 2026 draft prospects with estimated 2K26 ratings (add / remove / override). Numeric stat columns are shown with **two decimal places** in the table. Includes **Automation Settings** (sidebar) and **Push to PS5** for the UI-to-console bridge.
+- **Prospects** — 2026 draft prospects with estimated 2K26 ratings (add / remove / override). Numeric stat columns are shown with **two decimal places** in the table. Includes **Automation Settings** (sidebar), **Push to PS5** for the UI-to-console bridge, and the same **Excel / Google Sheets (full workbook)** export block as Settings (cached download per tab).
+- **Vision Lab** — Chiaki-ng window capture, **OCR ROI** nudging, and **Tesseract** preview for Remote Play feedback calibration (`src/ui/vision_lab_tab.py`).
 - **Scouting** — ESPN lines plus optional local **Ollama** write-ups; **Save to database** (or **Auto-save new AI scouting**, on by default) persists text to SQLite so a browser reload keeps your work. Recompute ratings after saving if formulas use scouting hints.
 - **Europe** — (Phase 2) Euroleague players with the same rating schema.
 - **Formulas** — live YAML editor for every rating formula (Calibrated engine) with fit metrics and rollback; **Recalculate** runs a **fast bulk write** (one SQLite transaction, throttled progress).
@@ -80,15 +82,16 @@ The app opens at `http://localhost:8506` with the following tabs:
 
 ## Automation features
 
-All automation aligns with the **`PROSPECTS_TABLE_COLUMNS`** **87-column** workbook order (`src/config.py`). Rating pushes map indices **34–70** (attributes); bio + stats occupy indices **0–33**; tail columns **71–86** are meta.
+All automation aligns with the **`PROSPECTS_TABLE_COLUMNS`** **87-column** workbook order (`src/config.py`), aligned with **`prospects (1) template.xlsx`**. Ratings occupy indices **34–70**; bio indices **0–13** lead with **`pos`**, **`secondary_position`**, **`age`**, **`height_in`**, **`weight_lbs`**, then identifiers through **`status`**; per-game stats **14–33**; meta **71–86**. (**`height_ft`** is computed for tables but omitted from the canonical **87** so **`overall_2k`** stays at index **34**.) Excel / Google Sheets **Focus Mode** hides columns visually without stripping cell values.
 
 - **Sidebar → Automation Settings**
   - **Initialize Virtual Controller**: creates **one** `vgamepad.VX360Gamepad()` stored in Streamlit **`session_state`** (reuse across reruns until restart).
   - **Edit player mode** (**default off**): when **off**, indices **0–33** (bio / stats) are **skipped** in the controller loop; when **on**, those indices are visited (navigation placeholder hook; ratings still drive stick values where applicable).
 - **Push to PS5** (Prospects tab, selected prospect): streams the row through `push_prospect_row_to_controller` with **`st.progress`** and status captions per column step (e.g. **Integnagbles**, **Durablity** — literal spellings preserved in **`INDEX_TO_NAV_MAP`** for menu parity).
+- **Vision Lab** (dedicated tab): crop preview and OCR readout for the live Chiaki window; ROI session state is shared with automation OCR overrides.
 - **Safety**: **`finally`** neutralizes the virtual stick to **`(0, 0)`**; **`try`/`except`** surfaces ViGEmBus / **`OSError`** paths in the UI.
 
-See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes.
+See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes; **v0.6.2** for Vision Lab / OCR stack.
 
 ---
 

@@ -63,9 +63,10 @@ def bust_cache() -> None:
     prospects_df.clear()
     audit_df.clear()
     formulas_df.clear()
-    from . import scouting_tab
+    from . import scouting_tab, workbook_export
 
     scouting_tab.clear_scouting_cache()
+    workbook_export.clear_cached_workbook_export()
 
 
 # ---------------------------------------------------------------------------

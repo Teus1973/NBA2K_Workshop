@@ -235,36 +235,26 @@ def resolve_mens_cbb_athlete_id(
             return None
         return str(tj.get("displayName") or "")
 
-        for it in ncaa[:15]:
-            aid = str(it.get("id") or "")
-            if not aid:
-                continue
-            tname = team_name_for(aid)
-            if tname and school_matches(school_or_team, tname):
-                return aid
-            # ESPN sometimes omits team $ref on the season athlete doc — with exactly
-            # one NCAA search hit, school verification is impossible; trust the hit.
-            if len(ncaa) == 1 and not tname:
-                log.info(
-                    "espn mcb: single NCAA hit for %r, no team ref — using id %s",
-                    full_name,
-                    aid,
-                )
-                return aid
-        log.info(
-            "espn mcb: no school match for %r (%r)",
-            full_name,
-            school_or_team,
-        )
-        return None
-
     if len(ncaa) == 1:
         return str(ncaa[0].get("id") or "") or None
 
+    for it in ncaa[:15]:
+        aid = str(it.get("id") or "")
+        if not aid:
+            continue
+        tname = team_name_for(aid)
+        if tname and school_matches(school_or_team, tname):
+            return aid
+        if not tname:
+            log.info(
+                "espn mcb: no team display for athlete id %s while disambiguating %r",
+                aid,
+                full_name,
+            )
     log.info(
-        "espn mcb: ambiguous NCAA search for %r (%d hits); need school_or_team",
+        "espn mcb: no school match for %r (%r)",
         full_name,
-        len(ncaa),
+        school_or_team,
     )
     return None
 
@@ -273,6 +263,7 @@ def statistics_to_prospect_stats(
     flat: dict[str, float],
     *,
     season_display: str,
+    team_total_games: int | None = None,
 ) -> dict[str, Any]:
     gp = int(flat.get("gamesPlayed") or 0)
     if gp <= 0:
@@ -292,9 +283,12 @@ def statistics_to_prospect_stats(
     if reb is None and oreb is not None and dreb is not None:
         reb = oreb + dreb
 
+    ttg = int(team_total_games) if team_total_games is not None and team_total_games > 0 else gp
+
     out: dict[str, Any] = {
         "season": season_display,
         "gp": gp,
+        "team_total_games": max(ttg, gp),
         "min": _g("avgMinutes"),
         "pts": _g("avgPoints"),
         "fgm": _g("avgFieldGoalsMade"),
@@ -313,7 +307,6 @@ def statistics_to_prospect_stats(
         "tov": _g("avgTurnovers"),
         "stl": _g("avgSteals"),
         "blk": _g("avgBlocks"),
-        "pf": _g("avgFouls"),
         "_stats_source": "espn-mcb",
     }
     return out

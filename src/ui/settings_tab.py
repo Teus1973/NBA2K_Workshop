@@ -13,8 +13,8 @@ import pandas as pd
 import streamlit as st
 
 from .. import audit, bulk_recalc, config, db
-from ..exporters import data_loader, excel_writer, gsheets_writer
-from . import common
+from ..exporters import data_loader
+from . import common, workbook_export
 
 
 REQUIRED_UPLOAD_COLS = {"full_name"}
@@ -574,31 +574,11 @@ def render() -> None:
     st.divider()
 
     # ---------------- Export ------------------------------------------
-    st.subheader("Export")
-    col_e1, col_e2 = st.columns(2)
-    with col_e1:
-        if st.button("Export to Excel", type="primary"):
-            out = config.EXPORTS_DIR / f"nba2k26_{pd.Timestamp.now(tz='UTC'):%Y%m%d_%H%M%S}.xlsx"
-            try:
-                excel_writer.export_to_excel(out)
-                with open(out, "rb") as fh:
-                    st.download_button(
-                        "Download Excel", fh.read(),
-                        file_name=out.name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-                st.success(f"Wrote {out}")
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Excel export failed: {exc}")
-
-    with col_e2:
-        if st.button("Export to Google Sheets"):
-            try:
-                url = gsheets_writer.export_to_gsheets()
-                st.success(f"Created: {url}")
-                st.markdown(f"[Open sheet]({url})")
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Google Sheets export failed: {exc}")
+    workbook_export.render_workbook_export_section(
+        heading="Export workbook (.xlsx / Google Sheets)",
+        use_expander=False,
+        slot="settings",
+    )
 
     st.divider()
     st.subheader("Environment")

@@ -2,20 +2,23 @@
 openpyxl-based Excel writer.
 
 Builds a four-sheet workbook (Reference / Prospects / Logs / Formulas). The
-Prospects sheet color-codes cells by source (scraped / combine / computed /
-manual-override) using the provenance dict produced by
-:func:`src.formulas.apply.apply_to_prospect`.
+Prospects sheet can color-code cells by provenance when ``slug`` is included in
+the exported columns (download slice omits it, so coloring is skipped there).
+
+The downloaded **Prospects** sheet is a fixed **44**-column slice (names, bio,
+then all **2K** ratings in template order). Row **1** uses friendly headers
+(**Pos** / **Age** / **Height**); freeze panes **C2**. Other sheets are unchanged.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 from .. import audit, config
@@ -23,6 +26,26 @@ from ..logger import get_logger
 from . import data_loader
 
 log = get_logger("exporters.excel_writer")
+
+# Prospects download: stable column order (internal dataframe keys). Headers for
+# ``pos`` / ``age`` / ``height_in`` are rewritten on row 1 (see
+# :data:`_EXCEL_HEADER_DISPLAY`). Does not affect :data:`config.PROSPECTS_TABLE_COLUMNS`
+# or Streamlit tables.
+PROSPECTS_EXCEL_DOWNLOAD_COLUMNS: tuple[str, ...] = (
+    "last_name",
+    "first_name",
+    "pos",
+    "secondary_position",
+    "age",
+    "height_in",
+    "weight_lbs",
+) + config.RATING_ATTRIBUTES
+
+_EXCEL_HEADER_DISPLAY: dict[str, str] = {
+    "pos": "Pos",
+    "age": "Age",
+    "height_in": "Height",
+}
 
 
 # Color palette for the Prospects sheet provenance coding (Documents/PLAN.md sec 2.2).
@@ -42,7 +65,67 @@ PROVENANCE_FILLS: dict[str, PatternFill] = {
 }
 
 
-def _write_df(ws, df: pd.DataFrame, *, freeze: str = "A2") -> None:
+_LONG_TEXT_COLS: frozenset[str] = frozenset({
+    "notes",
+    "full_name",
+    "school_or_team",
+    "added_by",
+    "scouting_ai_summary",
+    "scouting_physical_text",
+    "scouting_physical_json",
+    "manual_override_json",
+    "league_stats",
+    "source",
+    "updated_at",
+    "updated_at_stats",
+    "computed_at",
+})
+
+
+def _apply_prospect_column_widths(ws, df: pd.DataFrame) -> None:
+    """Stable widths on Prospects — avoids megabyte-wide columns from long text cells."""
+    if df.empty:
+        return
+    stat_set = frozenset(config.STAT_COLUMNS)
+    for idx, name in enumerate(df.columns, start=1):
+        letter = get_column_letter(idx)
+        if name in _LONG_TEXT_COLS:
+            w = 30.0
+        elif name.endswith("_2k"):
+            w = 10.5
+        elif name in stat_set:
+            w = 10.5 if name in ("fg_pct", "fg3_pct", "ft_pct") else 9.5
+        elif name == "slug":
+            w = 16.0
+        elif name in ("season", "league", "status", "column1", "formula_version"):
+            w = 12.0
+        elif name in ("espn_rank", "other_rank"):
+            w = 11.0
+        else:
+            w = 11.5
+        ws.column_dimensions[letter].width = min(max(w, 8.0), 44.0)
+
+
+def _apply_prospects_download_headers(ws) -> None:
+    """Replace row-1 labels for ``pos`` / ``age`` / ``height_in`` (Excel-only)."""
+    if ws.max_row < 1:
+        return
+    for cell in ws[1]:
+        if cell.value is None:
+            continue
+        key = str(cell.value).strip()
+        disp = _EXCEL_HEADER_DISPLAY.get(key)
+        if disp is not None:
+            cell.value = disp
+
+
+def _write_df(
+    ws,
+    df: pd.DataFrame,
+    *,
+    freeze: str | None = "A2",
+    autosize_columns: bool = True,
+) -> None:
     if df is None or df.empty:
         ws.append(["(no data)"])
         return
@@ -53,7 +136,10 @@ def _write_df(ws, df: pd.DataFrame, *, freeze: str = "A2") -> None:
                 cell.fill = HEADER_FILL
                 cell.font = HEADER_FONT
                 cell.alignment = Alignment(horizontal="center")
-    ws.freeze_panes = freeze
+    if freeze:
+        ws.freeze_panes = freeze
+    if not autosize_columns:
+        return
     for col in ws.columns:
         length = max((len(str(c.value)) if c.value is not None else 0
                       for c in col), default=8)
@@ -103,13 +189,17 @@ def export_to_excel(
     ws_for = wb.create_sheet("Formulas")
 
     ref_df = data_loader.load_reference_df(season, season_type)
-    pro_df = data_loader.load_prospects_df()
+    pro_df_full = data_loader.load_prospects_df()
+    pro_df = pro_df_full.reindex(columns=list(PROSPECTS_EXCEL_DOWNLOAD_COLUMNS))
     log_df = data_loader.load_audit_df(limit=5000)
     for_df = data_loader.load_formulas_df()
 
     _write_df(ws_ref, ref_df)
-    _write_df(ws_pro, pro_df)
+    _write_df(ws_pro, pro_df, freeze=None, autosize_columns=False)
+    _apply_prospects_download_headers(ws_pro)
     _apply_prospect_provenance(ws_pro, pro_df, provenance_by_slug or {})
+    ws_pro.freeze_panes = "C2"
+    _apply_prospect_column_widths(ws_pro, pro_df)
     _write_df(ws_eur, pd.DataFrame({"note": ["Phase 2 / deferred"]}))
     _write_df(ws_log, log_df)
     _write_df(ws_for, for_df.drop(columns=["yaml_blob"], errors="ignore")

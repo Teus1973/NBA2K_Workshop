@@ -23,6 +23,89 @@ log = get_logger("scrapers.sports_reference_cbb")
 BASE = "https://www.sports-reference.com/cbb/players"
 
 
+def _cbb_season_end_year(season_raw: Any) -> int:
+    """SR ``year_id`` / ``season`` cell → ESPN-style ending season year (e.g. 2026)."""
+    from . import espn_mens_cbb as _em
+
+    if season_raw is None:
+        return _em.espn_core_season_year(config.CURRENT_SEASON)
+    s = str(season_raw).strip()
+    if s.isdigit() and len(s) == 4:
+        return int(s)
+    if "-" in s:
+        return _em.espn_core_season_year(s)
+    try:
+        return int(float(s))
+    except (TypeError, ValueError):
+        return _em.espn_core_season_year(config.CURRENT_SEASON)
+
+
+def fetch_cbb_school_roster_max_gp(
+    school_slug: str,
+    season_year: int,
+    *,
+    force_refresh: bool = False,
+) -> int | None:
+    """Maximum games played among roster rows on the SR school season page.
+
+    Used as **team total games** when no dedicated team GP figure exists.
+    """
+    slug = (school_slug or "").strip().lower()
+    if not slug or season_year <= 0:
+        return None
+    url = f"https://www.sports-reference.com/cbb/schools/{slug}/{season_year}.html"
+    try:
+        html, _fc = _http.fetch_text(
+            url,
+            scope_dir=config.CACHE_CBB,
+            cache_key=f"sr-school-roster-{slug}-{season_year}",
+            suffix=".html",
+            force_refresh=force_refresh,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.info("sr school roster fetch failed %s: %s", url[:90], exc)
+        return None
+    html_u = html.replace("<!--", "").replace("-->", "")
+    soup = BeautifulSoup(html_u, "lxml")
+    best = 0
+    for table in soup.find_all("table", class_=lambda c: c and "stats_table" in c):
+        body = table.find("tbody")
+        if body is None:
+            continue
+        for tr in body.find_all("tr"):
+            cls = tr.get("class") or []
+            if "thead" in cls:
+                continue
+            for attr in ("games", "g"):
+                td = tr.find("td", {"data-stat": attr})
+                if td is None:
+                    continue
+                v = _parse_int(td.get_text(strip=True))
+                if v is not None and v > best:
+                    best = v
+    return best if best > 0 else None
+
+
+def _apply_team_total_games(out: dict[str, Any], *, force_refresh: bool = False) -> None:
+    """Fill ``team_total_games`` from school roster max GP, else the player's ``gp``."""
+    gp = out.get("gp")
+    try:
+        gp_i = int(gp) if gp is not None else 0
+    except (TypeError, ValueError):
+        gp_i = 0
+    if gp_i <= 0:
+        out["team_total_games"] = None
+        return
+    school = (out.get("sr_school_slug") or "").strip().lower()
+    yr = _cbb_season_end_year(out.get("season"))
+    mx = None
+    if school:
+        mx = fetch_cbb_school_roster_max_gp(
+            school, yr, force_refresh=force_refresh)
+    ttg = mx if mx and mx > 0 else gp_i
+    out["team_total_games"] = int(max(ttg, gp_i))
+
+
 def _parse_num(v: Any) -> float | None:
     if v is None:
         return None
@@ -194,7 +277,7 @@ def _cbb_merge_totals_splits(soup: BeautifulSoup, stats: dict[str, Any]) -> None
         stats["reb"] = round(trb_t / gp, 4)
 
 
-def parse_player_page(html: str) -> dict[str, Any]:
+def parse_player_page(html: str, *, force_refresh: bool = False) -> dict[str, Any]:
     """Extract the current-season per-game stat row plus physicals."""
     soup = BeautifulSoup(html, "lxml")
     # sports-reference wraps some tables in HTML comments. Un-comment.
@@ -255,7 +338,6 @@ def parse_player_page(html: str) -> dict[str, Any]:
             out["tov"] = _parse_num(cells.get("tov_per_g"))
             out["stl"] = _parse_num(cells.get("stl_per_g"))
             out["blk"] = _parse_num(cells.get("blk_per_g"))
-            out["pf"] = _parse_num(cells.get("pf_per_g"))
             # Rare layouts omit split rebounds on per-game rows; totals table fills them.
             if out.get("oreb") is None:
                 out["oreb"] = _parse_num(cells.get("orb"))
@@ -266,6 +348,7 @@ def parse_player_page(html: str) -> dict[str, Any]:
             break
 
     _cbb_merge_totals_splits(soup, out)
+    _apply_team_total_games(out, force_refresh=force_refresh)
     return out
 
 
@@ -289,7 +372,7 @@ def fetch_player(slug: str, *, suffix: int = 1,
         log.info("sports-reference fetch failed for %s: %s", url, exc)
         return {}
 
-    data = parse_player_page(html)
+    data = parse_player_page(html, force_refresh=force_refresh)
     audit.log_event(
         action="scrape_cbb",
         entity_type="prospect",

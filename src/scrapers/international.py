@@ -155,7 +155,7 @@ def parse_bbintl_totals_per_game(
         "tov": pg("tov"),
         "stl": pg("stl"),
         "blk": pg("blk"),
-        "pf": pg("pf"),
+        "team_total_games": gp,
         "_stats_source": "basketball-reference-intl",
     }
 
@@ -275,8 +275,13 @@ def parse_proballers_page(html: str) -> dict[str, Any]:
         "tov": _parse_num(col(["tov", "to"])),
         "stl": _parse_num(col(["stl", "spg"])),
         "blk": _parse_num(col(["blk", "bpg"])),
-        "pf": _parse_num(col(["pf"])),
     }
+    gp_i = out.get("gp")
+    try:
+        gi = int(gp_i) if gp_i is not None else 0
+    except (TypeError, ValueError):
+        gi = 0
+    out["team_total_games"] = gi if gi > 0 else None
     return out
 
 

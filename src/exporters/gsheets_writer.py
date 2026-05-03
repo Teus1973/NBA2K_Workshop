@@ -32,6 +32,64 @@ SCOPES = [
 TOKEN_PATH = config.get_user_data_dir() / "gsheets_token.json"
 
 
+def _apply_prospects_sheet_focus(service: Any, spreadsheet_id: str) -> None:
+    """Hide cols A–B and stats band **O–AH** (indices **14–33**); freeze row 1 + 4 cols."""
+    meta = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets.properties",
+    ).execute()
+    prospects_sid: int | None = None
+    for sh in meta.get("sheets", []):
+        props = sh.get("properties") or {}
+        if props.get("title") == "Prospects":
+            prospects_sid = props.get("sheetId")
+            break
+    if prospects_sid is None:
+        return
+    requests_body: list[dict[str, Any]] = [
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": prospects_sid,
+                    "gridProperties": {
+                        "frozenRowCount": 1,
+                        "frozenColumnCount": 4,
+                    },
+                },
+                "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": prospects_sid,
+                    "dimension": "COLUMNS",
+                    "startIndex": 0,
+                    "endIndex": 2,
+                },
+                "properties": {"hiddenByUser": True},
+                "fields": "hiddenByUser",
+            }
+        },
+        {
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": prospects_sid,
+                    "dimension": "COLUMNS",
+                    "startIndex": 14,
+                    "endIndex": 34,
+                },
+                "properties": {"hiddenByUser": True},
+                "fields": "hiddenByUser",
+            }
+        },
+    ]
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": requests_body},
+    ).execute()
+
+
 # ---------------------------------------------------------------------------
 def _require_google() -> Any:
     try:
@@ -126,6 +184,8 @@ def export_to_gsheets(
     write("Europeans", pd.DataFrame({"note": ["Phase 2 / deferred"]}))
     write("Logs", log_df)
     write("Formulas", for_df)
+
+    _apply_prospects_sheet_focus(service, sheet_id)
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
     audit.log_event(

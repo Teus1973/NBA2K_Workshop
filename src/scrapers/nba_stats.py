@@ -163,6 +163,25 @@ def season_stats_rows(
     Produces per-game derived stats where the source gives only totals
     (GP -> per-game PTS etc.).
     """
+    team_max_gp: dict[int, int] = {}
+    if "TEAM_ID" in totals_df.columns:
+        try:
+            grp = totals_df.groupby("TEAM_ID", dropna=False)["GP"].max()
+            for tid, vmax in grp.items():
+                if tid is None or (isinstance(tid, float) and pd.isna(tid)):
+                    continue
+                try:
+                    ik = int(tid)
+                except (TypeError, ValueError):
+                    continue
+                if pd.notna(vmax):
+                    try:
+                        team_max_gp[ik] = int(vmax)
+                    except (TypeError, ValueError):
+                        continue
+        except Exception:  # noqa: BLE001
+            team_max_gp = {}
+
     rows: list[dict[str, Any]] = []
     for _, r in totals_df.iterrows():
         gp = int(r.get("GP", 0) or 0)
@@ -171,11 +190,19 @@ def season_stats_rows(
         pts = _f(r.get("PTS"))
         minutes = _f(r.get("MIN"))
         per_game = (lambda x: (x / gp) if (x is not None and gp) else None)
+        tid_raw = r.get("TEAM_ID")
+        team_cap = gp
+        if tid_raw is not None and not (isinstance(tid_raw, float) and pd.isna(tid_raw)):
+            try:
+                team_cap = max(team_max_gp.get(int(tid_raw), gp), gp)
+            except (TypeError, ValueError):
+                team_cap = gp
         rows.append({
             "player_id": int(r["PLAYER_ID"]),
             "season": season,
             "season_type": season_type,
             "gp": gp,
+            "team_total_games": int(team_cap),
             "min": per_game(minutes),
             "pts": per_game(pts),
             "fgm": per_game(_f(r.get("FGM"))),
@@ -194,7 +221,6 @@ def season_stats_rows(
             "tov": per_game(_f(r.get("TOV"))),
             "stl": per_game(_f(r.get("STL"))),
             "blk": per_game(_f(r.get("BLK"))),
-            "pf": per_game(_f(r.get("PF"))),
             "source": "nba_api",
         })
     return rows

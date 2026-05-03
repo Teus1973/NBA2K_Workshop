@@ -32,6 +32,7 @@ _PROSPECT = {
     "tov": 1.0,
     "stl": 1.2,
     "blk": 0.3,
+    "team_total_games": 30,
     "pf": 1.9,
 }
 

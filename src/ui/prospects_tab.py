@@ -20,10 +20,12 @@ from .. import audit, config, db
 from ..automation.controller_mapping import (
     neutralize_virtual_stick,
     push_prospect_row_to_controller,
+    send_capture_handshake,
 )
 from ..formulas import apply as fapply, registry as _registry
 from ..scrapers import espn_bigboard
-from . import common
+from . import common, workbook_export
+from .vision_lab_tab import automation_ocr_roi_tuple
 
 PROVENANCE_COLORS = {
     "scraped": "#C6EFCE",
@@ -38,6 +40,11 @@ _CELL_STYLE = "background-color: {bg}; color: " + PROVENANCE_TEXT + ";"
 
 def _render_automation_sidebar() -> None:
     """Sidebar: virtual Xbox 360 controller setup for PS5 Remote Play."""
+    st.session_state.pop("automation_roi_live_preview", None)
+    st.sidebar.caption(
+        "Chiaki OCR ROI calibration lives on the **Vision Lab** tab. Controller bridge below."
+    )
+
     with st.sidebar.expander("Automation Settings", expanded=False):
         st.caption(
             "Requires ViGEmBus. Initializes **one** ``vgamepad.VX360Gamepad`` "
@@ -48,19 +55,63 @@ def _render_automation_sidebar() -> None:
             value=False,
             key="automation_edit_player_mode",
         )
+        st.caption(
+            "Enable **OCR rating feedback** on **Vision Lab** so **Push to PS5** can use "
+            "Tesseract delta-nudging with your ROI."
+        )
         if st.button(
             "Initialize Virtual Controller",
             key="automation_init_vgamepad",
         ):
-            try:
-                import vgamepad as vg
+            if st.session_state.get("automation_gamepad") is not None:
+                st.warning(
+                    "A virtual controller is already active in this session. "
+                    "Restart the Streamlit app if you need a fresh device."
+                )
+            else:
+                try:
+                    import vgamepad as vg
+                except ImportError:
+                    st.session_state["automation_vgamepad_missing"] = True
+                    st.error("The **vgamepad** package is not installed.")
+                else:
+                    st.session_state.pop("automation_vgamepad_missing", None)
+                    st.session_state.pop("automation_show_vgamepad_pip", None)
+                    try:
+                        st.session_state["automation_gamepad"] = vg.VX360Gamepad()
+                        st.success("Virtual controller ready.")
+                    except OSError as e:
+                        st.error(f"ViGEmBus / driver error: {e}")
+                    except Exception as e:
+                        st.error(f"Could not initialize virtual controller: {e}")
 
-                st.session_state["automation_gamepad"] = vg.VX360Gamepad()
-                st.success("Virtual controller ready.")
-            except OSError as e:
-                st.error(f"ViGEmBus / driver error: {e}")
+        if st.session_state.get("automation_vgamepad_missing"):
+            if st.button(
+                "Install Dependency",
+                key="automation_install_vgamepad_help",
+                help="Show pip install line for vgamepad",
+            ):
+                st.session_state["automation_show_vgamepad_pip"] = True
+            if st.session_state.get("automation_show_vgamepad_pip"):
+                st.code("pip install vgamepad", language="bash")
+                st.caption(
+                    "You still need **ViGEmBus** (virtual Xbox driver) for the device."
+                )
+
+        _gp_ready = st.session_state.get("automation_gamepad") is not None
+        if st.button(
+            "Send Test Input (Capture Handshake)",
+            key="automation_capture_handshake",
+            disabled=not _gp_ready,
+            help="D-pad down pulse for Chiaki-ng controller capture (no prospect row / anchors).",
+        ):
+            try:
+                send_capture_handshake(st.session_state["automation_gamepad"])
+                st.success("Handshake sent (D-pad down pulse).")
+            except ImportError as e:
+                st.error(f"vgamepad not available: {e}")
             except Exception as e:
-                st.error(f"Could not initialize virtual controller: {e}")
+                st.error(f"Handshake failed: {e}")
 
 
 def _prospect_series_to_controller_row(series: pd.Series) -> list:
@@ -296,8 +347,20 @@ def render() -> None:
         "last_name": "Last Name",
         "first_name": "First Name",
     }).to_csv(buf, index=False)
-    st.download_button("Download CSV", buf.getvalue(),
-                       file_name="prospects.csv", mime="text/csv")
+    st.download_button(
+        "Download CSV (quick)",
+        buf.getvalue(),
+        file_name="prospects.csv",
+        mime="text/csv",
+        help="Spreadsheet-ready plain CSV — no freezing/hiding (use workbook export below).",
+    )
+
+    workbook_export.render_workbook_export_section(
+        provenance_by_slug=provenance_by_slug,
+        use_expander=True,
+        expander_label="Excel / Google Sheets — full workshop workbook",
+        slot="prospects",
+    )
 
     # ---------------- add/remove/override -----------------------------
     st.divider()
@@ -395,8 +458,8 @@ def render() -> None:
         ):
             if gp_for_push is None:
                 st.warning(
-                    "Initialize **Virtual Controller** in **Sidebar → Automation Settings** "
-                    "first."
+                    "Initialize **Virtual Controller** (Sidebar → **Automation Settings**). "
+                    "Calibrate OCR on **Vision Lab**."
                 )
             else:
                 row_series = df.loc[df["slug"] == slug_to_edit].iloc[0]
@@ -405,16 +468,26 @@ def render() -> None:
                 status = st.empty()
                 edit_mode = bool(
                     st.session_state.get("automation_edit_player_mode", False))
+                use_ocr = bool(
+                    st.session_state.get("automation_use_ocr_feedback", False))
+                roi_bbox = automation_ocr_roi_tuple()
 
                 def _on_progress(frac: float, msg: str) -> None:
                     prog.progress(min(1.0, max(0.0, frac)))
                     status.caption(msg)
 
                 try:
+                    if gp_for_push is None:
+                        raise RuntimeError(
+                            "automation_gamepad missing from session state "
+                            "(singleton check failed)."
+                        )
                     push_prospect_row_to_controller(
                         row_list,
-                        edit_player_mode=edit_mode,
                         gamepad=gp_for_push,
+                        edit_player_mode=edit_mode,
+                        use_ocr_feedback=use_ocr,
+                        ocr_roi_relative_xywh=roi_bbox if use_ocr else None,
                         on_progress=_on_progress,
                     )
                     prog.progress(1.0)
