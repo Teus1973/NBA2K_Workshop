@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import concurrent.futures
 import re
@@ -53,14 +54,32 @@ _CHIAKI_FOCUS_ACTIVATE_SETTLE_S = 0.18
 
 # Bounding box relative to Chiaki window top-left **(dpi-aware rect from pygetwindow)**.
 # Tune via Streamlit Automation Settings or pass ``ocr_roi_relative_xywh`` to push/diagnostic APIs.
-DEFAULT_OCR_ROI_RELATIVE_XYWH: tuple[int, int, int, int] = (730, 480, 60, 40)
+DEFAULT_OCR_ROI_RELATIVE_XYWH: tuple[int, int, int, int] = (1660, 1035, 60, 40)
 _RATING_CELL_BBOX_RELATIVE_XYWH = DEFAULT_OCR_ROI_RELATIVE_XYWH
 
 _READ_RATING_RETRY_DELAY_S = 0.1
 _READ_RATING_MAX_ATTEMPTS = 3
 
+# Inset crop before Tesseract: LR drops dividers; TB trims controller glyph in cell.
+_OCR_ROI_SHAVE_LR_PX = 7
+_OCR_ROI_SHAVE_TB_PX = 4
+
+# Chiaki-ng motion blur: wait after D-pad column advance before OCR capture (sync path).
+_OCR_POST_DPAD_BLUR_SETTLE_S = 0.3
+
 # Max plausible one-shot adjustment (25→99 delta == 74). Beyond this OCR is wrong.
 _MAX_RATING_DELTA_STEPS = 74
+
+# INDEX_TO_NAV_MAP PS5 menu strings: accept alternate 2K spellings (indices 68 / 70 fixed).
+_MENU_LABEL_INTANGIBLES_ACCEPT: tuple[str, ...] = (
+    "Integnagbles",
+    "Intangibles",
+)
+_MENU_LABEL_DURABILITY_ACCEPT: tuple[str, ...] = (
+    "Durablity",
+    "Durability",
+    "Durabiilty",
+)
 
 
 def _default_nav_label(column_key: str) -> str:
@@ -440,8 +459,18 @@ def get_ocr_diagnostic_image(
     *,
     roi_relative_xywh: tuple[int, int, int, int] | None = None,
 ) -> "Image.Image":
-    """Return the current rating-cell crop as seen by OCR (preview for Streamlit UI)."""
+    """Return the current rating-cell MSS crop (full ROI); Tesseract shaves LR internally."""
     return capture_rating_cell_image_pil(roi_relative_xywh=roi_relative_xywh)
+
+
+def _shave_roi(rgb: "Image.Image") -> "Image.Image":
+    """Crop ROI before OCR: LR trims column dividers; TB trims top/bottom UI (e.g. stick icon)."""
+    w, h = rgb.size
+    lr = _OCR_ROI_SHAVE_LR_PX
+    tb = min(_OCR_ROI_SHAVE_TB_PX, max(0, h // 8))
+    if w <= 2 * lr or h <= 2 * tb:
+        return rgb
+    return rgb.crop((lr, tb, w - lr, h - tb))
 
 
 def _tesseract_rating_text(rgb: "Image.Image") -> str:
@@ -453,6 +482,7 @@ def _tesseract_rating_text(rgb: "Image.Image") -> str:
             "pytesseract required for OCR ratings. pip install pytesseract"
         ) from e
 
+    rgb = _shave_roi(rgb)
     gray = rgb.convert("L")
     cfg = "--psm 7 -c tessedit_char_whitelist=0123456789"
     raw = str(pytesseract.image_to_string(gray, config=cfg) or "").strip()
@@ -481,7 +511,7 @@ def preview_tesseract_rating_at_roi(
 def _read_rating_via_ocr_sync_loop(
     roi_relative_xywh: tuple[int, int, int, int] | None = None,
 ) -> int:
-    """Worker: capture ROI + OCR, up to 3 attempts × 0.1s backoff."""
+    """Worker: capture ROI + OCR, up to 3 attempts × 0.1s backoff on empty/non-rating reads."""
     last_raw = ""
 
     for _ in range(_READ_RATING_MAX_ATTEMPTS):
@@ -491,6 +521,9 @@ def _read_rating_via_ocr_sync_loop(
         except RuntimeError:
             raise
         last_raw = raw
+        if not (raw or "").strip():
+            time.sleep(_READ_RATING_RETRY_DELAY_S)
+            continue
         val = parse_rating_digits_from_text(raw)
         if val is not None:
             return val
@@ -499,6 +532,27 @@ def _read_rating_via_ocr_sync_loop(
     raise RuntimeError(
         f"OCR failed after {_READ_RATING_MAX_ATTEMPTS} attempts "
         f"(blur/animation?): last_tesseract={last_raw!r}"
+    )
+
+
+def _ocr_post_dpad_blur_settle() -> None:
+    """Let Chiaki-ng clear motion blur after D-pad nav; ``asyncio.sleep(0.3)`` when safe."""
+
+    async def _wait() -> None:
+        await asyncio.sleep(_OCR_POST_DPAD_BLUR_SETTLE_S)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_wait())
+    else:
+        time.sleep(_OCR_POST_DPAD_BLUR_SETTLE_S)
+
+
+def _telemetry_ocr_cell(current: int, target: int, pulse_count: int) -> None:
+    print(
+        f"[OCR Read: {current}] [Target: {target}] [Pulse Count: {pulse_count}]",
+        flush=True,
     )
 
 
@@ -530,11 +584,18 @@ def _apply_rating_delta_from_ocr(
     *,
     roi_relative_xywh: tuple[int, int, int, int] | None = None,
 ) -> None:
+    _ocr_post_dpad_blur_settle()
     current = read_rating_via_ocr_threaded_blocking(roi_relative_xywh=roi_relative_xywh)
     delta = int(target_rating) - int(current)
     if delta == 0:
+        _telemetry_ocr_cell(current, target_rating, 0)
         return
     if abs(delta) > _MAX_RATING_DELTA_STEPS:
+        print(
+            "[automation] OCR sanity: refusing delta "
+            f"|{delta}| (ocr_read={current}, target={target_rating})",
+            flush=True,
+        )
         raise RuntimeError(
             f"Refusing OCR delta magnitude |{delta}| over sanity cap "
             f"{_MAX_RATING_DELTA_STEPS} (likely misread OCR; current_read={current}, "
@@ -542,6 +603,7 @@ def _apply_rating_delta_from_ocr(
         )
     upward = delta > 0
     pulses = abs(delta)
+    _telemetry_ocr_cell(current, target_rating, pulses)
     for _ in range(pulses):
         _right_stick_delta_pulse(gamepad, upward)
 
@@ -568,28 +630,41 @@ def _assert_overall_2k_anchor() -> None:
         )
 
 
+def _menu_nav_label_accepted(label: str, accepted: tuple[str, ...]) -> bool:
+    lf = label.casefold()
+    return any(lf == a.casefold() for a in accepted)
+
+
 def _assert_typo_menu_anchors() -> None:
-    """PS5 edit screen spellings must align with schema v6 indices (68 / 70, not 1-based col 71)."""
+    """PS5 edit screen spellings at schema v6 indices (68 / 70); allow in-game typo variants."""
     cols = config.PROSPECTS_TABLE_COLUMNS
     if cols[_INTANGIBLES2K_NAV_INDEX] != "intangibles_2k":
         raise RuntimeError(
-            "Automation anchor mismatch: index 68 must be intangibles_2k for Integnagbles."
+            "Automation anchor mismatch: index 68 must be intangibles_2k for menu Intangibles group."
         )
-    if INDEX_TO_NAV_MAP[_INTANGIBLES2K_NAV_INDEX] != "Integnagbles":
+    if not _menu_nav_label_accepted(
+        INDEX_TO_NAV_MAP[_INTANGIBLES2K_NAV_INDEX],
+        _MENU_LABEL_INTANGIBLES_ACCEPT,
+    ):
         raise RuntimeError(
-            "INDEX_TO_NAV_MAP[68] must be Integnagbles (menu spelling)."
+            "Automation anchor mismatch: INDEX_TO_NAV_MAP[68] must be one of "
+            f"{_MENU_LABEL_INTANGIBLES_ACCEPT!r} (game menu spelling)."
         )
     if cols.index("durability_2k") != _DURABILITY2K_NAV_INDEX:
         raise RuntimeError(
-            "Automation anchor mismatch: durability_2k must be index 70 for Durablity."
+            "Automation anchor mismatch: durability_2k must be index 70 for Durability menu group."
         )
     if cols[_DURABILITY2K_NAV_INDEX] != "durability_2k":
         raise RuntimeError(
             "Automation anchor mismatch: index 70 must be durability_2k."
         )
-    if INDEX_TO_NAV_MAP[_DURABILITY2K_NAV_INDEX] != "Durablity":
+    if not _menu_nav_label_accepted(
+        INDEX_TO_NAV_MAP[_DURABILITY2K_NAV_INDEX],
+        _MENU_LABEL_DURABILITY_ACCEPT,
+    ):
         raise RuntimeError(
-            "INDEX_TO_NAV_MAP[70] must be Durablity (menu spelling)."
+            "Automation anchor mismatch: INDEX_TO_NAV_MAP[70] must be one of "
+            f"{_MENU_LABEL_DURABILITY_ACCEPT!r} (game menu spelling)."
         )
 
 
@@ -621,14 +696,14 @@ def _apply_rating_input(gamepad: object, rating: int) -> None:
     gamepad.update()
 
 
-def _dpad_left_nav_step(gamepad: object) -> None:
-    """One D-pad Left to move to the next attribute column in the grid."""
+def _dpad_next_column_nav_step(gamepad: object) -> None:
+    """One D-pad Right: next rating column in Detailed Grid (LTR column order on PS5)."""
     import vgamepad as vg
 
-    gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT)
+    gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT)
     gamepad.update()
     time.sleep(_DPAD_NAV_HOLD_S)
-    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT)
+    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT)
     gamepad.update()
     time.sleep(_DPAD_NAV_SETTLE_S)
 
@@ -712,6 +787,14 @@ def push_prospect_row_to_controller(
     _assert_typo_menu_anchors()
     gp = gamepad
 
+    include_bio = bool(edit_player_mode)
+    start_idx = 0 if include_bio else _OVERALL_2K_ANCHOR_INDEX
+    print(
+        f"[automation] Starting push. Bio={include_bio}, Ratings=True, "
+        f"StartIndex={start_idx}",
+        flush=True,
+    )
+
     def _post_column_stability(col_idx: int) -> None:
         if (col_idx + 1) % _BUFFER_FLUSH_INTERVAL_COLS == 0:
             gp.update()
@@ -719,16 +802,11 @@ def push_prospect_row_to_controller(
         time.sleep(_STABILITY_INPUT_DELAY_S)
 
     try:
-        for idx in range(87):
+        span = max(1, 87 - start_idx)
+        for idx in range(start_idx, 87):
             label = INDEX_TO_NAV_MAP[idx]
             raw = row_data[idx] if idx < len(row_data) else None
-            frac = (idx + 1) / 87.0
-
-            if idx < 34 and not edit_player_mode:
-                if on_progress:
-                    on_progress(frac, f"Skipping {label}…")
-                _post_column_stability(idx)
-                continue
+            frac = (idx - start_idx + 1) / float(span)
 
             if idx in _RATING_INDICES:
                 rating = _effective_rating(raw)
@@ -758,8 +836,12 @@ def push_prospect_row_to_controller(
                         gp, rating, roi_relative_xywh=ocr_roi_relative_xywh
                     )
                 else:
+                    print(
+                        f"[OCR Read: n/a] [Target: {rating}] [Pulse Count: 0]",
+                        flush=True,
+                    )
                     _apply_rating_input(gp, rating)
-                _dpad_left_nav_step(gp)
+                _dpad_next_column_nav_step(gp)
             else:
                 if on_progress:
                     on_progress(frac, f"Skipping {label}…")

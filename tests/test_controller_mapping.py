@@ -26,7 +26,7 @@ class _FakeGamepad:
         self.left_calls: list[tuple[float, float]] = []
         self.right_calls: list[tuple[float, float]] = []
         self.updates = 0
-        self.dpad_left_steps = 0
+        self.dpad_release_count = 0
 
     def left_joystick_float(self, x_value: float, y_value: float = 0.0) -> None:
         self.left_calls.append((float(x_value), float(y_value)))
@@ -39,7 +39,7 @@ class _FakeGamepad:
 
     def release_button(self, *, button: object) -> None:
         _ = button
-        self.dpad_left_steps += 1
+        self.dpad_release_count += 1
 
     def update(self) -> None:
         self.updates += 1
@@ -55,6 +55,7 @@ def no_automation_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     stub_vg.XUSB_BUTTON = types.SimpleNamespace(
         XUSB_GAMEPAD_DPAD_DOWN=object(),
         XUSB_GAMEPAD_DPAD_LEFT=object(),
+        XUSB_GAMEPAD_DPAD_RIGHT=object(),
     )
     monkeypatch.setitem(sys.modules, "vgamepad", stub_vg)
 
@@ -73,6 +74,13 @@ def test_anchor_literals_match_schema_columns() -> None:
     assert INDEX_TO_NAV_MAP[70] == "Durablity"
     assert INDEX_TO_NAV_MAP[config.PROSPECTS_TABLE_COLUMNS.index("post_hook_2k")] == "Post Hook"
     assert INDEX_TO_NAV_MAP[config.PROSPECTS_TABLE_COLUMNS.index("post_fade_2k")] == "Post Fade"
+
+
+def test_typo_menu_anchors_accept_alternate_game_spellings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Session-start validation allows corrected or variant 2K menu strings (case-insensitive)."""
+    monkeypatch.setitem(cm.INDEX_TO_NAV_MAP, 68, "Intangibles")
+    monkeypatch.setitem(cm.INDEX_TO_NAV_MAP, 70, "durabiilty")
+    cm._assert_typo_menu_anchors()
 
 
 def test_effective_rating_applies_plus_one_and_clamps() -> None:
@@ -107,6 +115,14 @@ def test_preview_tesseract_rating_at_roi_calibration_signature() -> None:
 def test_roi_relative_xywh_absolute_region() -> None:
     roi = cm._roi_abs_from_window_rect((100, 200, 640, 480), (420, 220, 100, 36))
     assert roi == {"left": 520, "top": 420, "width": 100, "height": 36}
+
+
+def test_shave_roi_insets_lr_and_tb_before_ocr() -> None:
+    from PIL import Image
+
+    img = Image.new("RGB", (60, 40), color=(128, 128, 128))
+    out = cm._shave_roi(img)
+    assert out.size == (46, 32)
 
 
 def test_parse_rating_digits_from_text() -> None:
@@ -200,7 +216,7 @@ def test_skips_bio_stats_without_edit_player_mode(no_automation_sleep) -> None:
     assert len(gp.right_calls) == 3
     assert gp.right_calls[-1] == (0.0, 0.0)
     assert gp.left_calls == [(0.0, 0.0)]
-    assert gp.dpad_left_steps == 1
+    assert gp.dpad_release_count == 1
 
 
 def test_edit_player_mode_processes_early_columns_when_ratings_present(

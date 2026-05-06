@@ -1,4 +1,4 @@
-**Last updated: 2026-05-03**
+**Last updated: 2026-05-06**
 
 # NBA2K26 Rookie Rating Tool (NBA2K Workshop)
 
@@ -29,7 +29,7 @@ Copy-Item .env.example .env
 1. Install **ViGEmBus** on Windows (virtual Xbox 360 controller driver used by Remote Play tooling).
 2. `requirements.txt` pins **`vgamepad`** — installed with `pip install -r requirements.txt`. Without ViGEmBus, **Initialize Virtual Controller** in the Prospects sidebar will surface a driver error.
 3. For **Vision Lab** (Chiaki window capture + OCR preview), install **Tesseract OCR for Windows** and add it to **`PATH`**; Python deps **`mss`**, **`pygetwindow`**, **`Pillow`**, and **`pytesseract`** ship with `requirements.txt`.
-4. Launch the app, open **Prospects**, expand **Sidebar → Automation Settings**, initialize the controller once per session, then use **Push to PS5** for the selected prospect row (**87-column** framework plus optional **potential** at meta column **88**). Use **Vision Lab** to tune the OCR crop when validating Remote Play feedback.
+4. Launch the app, open **Prospects**, expand **Sidebar → Automation Settings**, initialize the controller once per session, then use **Push to PS5** for the selected prospect row (**87-column** framework plus optional **potential** at meta column **88**). Use **Vision Lab** to tune the OCR crop when validating Remote Play feedback. Session ROI defaults align with the built-in calibration tuple (see **Vision Lab** presets / **Restore built-in default**); Tesseract applies an **internal** inset (left/right and top/bottom) so the on-screen red box still matches your full cell while OCR ignores dividers and the in-cell controller glyph.
 
 **Every other time** — double-click the launcher script, or run the packaged Windows binary when present:
 
@@ -75,7 +75,7 @@ The app opens at `http://localhost:8506` with the following tabs:
 - **Scouting** — ESPN lines plus optional local **Ollama** write-ups; **Save to database** (or **Auto-save new AI scouting**, on by default) persists text to SQLite so a browser reload keeps your work. Recompute ratings after saving if formulas use scouting hints.
 - **Europe** — (Phase 2) Euroleague players with the same rating schema.
 - **Formulas** — live YAML editor for every rating formula (Calibrated engine) with fit metrics and rollback; **Recalculate** runs a **fast bulk write** (one SQLite transaction, throttled progress).
-- **Logs** — append-only change log (stat refreshes, rating recalcs, user edits).
+- **Logs** — append-only change log (scrapes, recalcs, exports, overrides, **Push to PS5** outcomes). Filter, download CSV, and **clear entire audit log** (with confirmation) from one screen.
 - **Settings** — scrape refresh, **Recompute prospect ratings** (same batched path), CSV/XLSX upload, Excel / Google Sheets export, full pipeline.
 
 ---
@@ -86,12 +86,12 @@ All automation aligns with the **`PROSPECTS_TABLE_COLUMNS`** **87-column** workb
 
 - **Sidebar → Automation Settings**
   - **Initialize Virtual Controller**: creates **one** `vgamepad.VX360Gamepad()` stored in Streamlit **`session_state`** (reuse across reruns until restart).
-  - **Edit player mode** (**default off**): when **off**, indices **0–33** (bio / stats) are **skipped** in the controller loop; when **on**, those indices are visited (navigation placeholder hook; ratings still drive stick values where applicable).
-- **Push to PS5** (Prospects tab, selected prospect): streams the row through `push_prospect_row_to_controller` with **`st.progress`** and status captions per column step (e.g. **Integnagbles**, **Durablity** — literal spellings preserved in **`INDEX_TO_NAV_MAP`** for menu parity).
-- **Vision Lab** (dedicated tab): crop preview and OCR readout for the live Chiaki window; ROI session state is shared with automation OCR overrides.
+  - **Edit player mode** (**default off**): when **off**, the sweep **starts at index 34** (**`overall_2k`**) and walks rating columns only; when **on**, the loop starts at **0** and visits bio / stats indices as well (navigation placeholder hook; ratings still drive stick values where applicable).
+- **Push to PS5** (Prospects tab, selected prospect): streams the row through `push_prospect_row_to_controller` with **`st.progress`** and status captions per column step. **`INDEX_TO_NAV_MAP`** preserves in-game spellings (**Integnagbles**, **Durablity**); startup validation also accepts documented alternate menu strings. After each applied rating, **D-pad Right** advances one column in the detailed grid (LTR). **OCR feedback** mode waits for stream/blur settle before capture, retries weak reads, prints per-cell **`[OCR Read] [Target] [Pulse Count]`** telemetry to the console, and refuses absurd OCR deltas to avoid runaway stick pulses.
+- **Vision Lab** (dedicated tab): crop preview and OCR readout for the live Chiaki window; ROI session state is shared with automation OCR overrides (chiaki-relative **x, y, width, height**).
 - **Safety**: **`finally`** neutralizes the virtual stick to **`(0, 0)`**; **`try`/`except`** surfaces ViGEmBus / **`OSError`** paths in the UI.
 
-See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes; **v0.6.2** for Vision Lab / OCR stack.
+See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes; **v0.6.2** for Vision Lab / OCR stack; **v0.9.3** for PS5 push / OCR stability and audit logging.
 
 ---
 
@@ -173,14 +173,14 @@ You can edit the coefficients in the **Formulas** tab and re-run the whole Prosp
 
 ## Audit log / "Logs" tab
 
-Every auto-update writes a row to `audit_log` with `before → after`. Filterable by:
+Most actions write a row to `audit_log` (some rows carry `before_value` / `after_value`; others use **`note`** only). Filterable by:
 
 - **actor** — `system` (scheduled / on-demand refresh) or `user` (manual edit)
-- **action** — `stat_refresh`, `rating_recalc`, `player_added`, `player_removed`, `formula_edit`, `override_set`
-- **entity** — player slug
-- **field** — attribute name
+- **action** — includes `stat_refresh`, `rating_recalc`, `player_added`, `player_removed`, `formula_edit`, `override_set`, `export_excel`, **`automation_push`**, and other scraper/export verbs
+- **entity** — player slug (when applicable)
+- **field** — attribute name (when applicable)
 
-Download the current filter as CSV from the Logs tab.
+Download the **filtered** view as CSV from the Logs tab, or **clear the entire** `audit_log` table after confirming (destructive; page reruns afterward).
 
 ---
 

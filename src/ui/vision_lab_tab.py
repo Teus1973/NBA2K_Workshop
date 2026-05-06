@@ -16,7 +16,7 @@ import streamlit as st
 _VISION_LAB_CAPTURE_INTERVAL_S = 0.2
 
 # Coordinate Jump presets (pixels relative to Chiaki window top-left).
-ROI_JUMP_1080P_GRID_START_XYWH: tuple[int, int, int, int] = (745, 490, 60, 40)
+ROI_JUMP_1080P_GRID_START_XYWH: tuple[int, int, int, int] = (1660, 1035, 60, 40)
 # Wide upper band to sanity-check header copy such as "Draft Class" (layout-dependent).
 ROI_JUMP_HEADER_CHECK_XYWH: tuple[int, int, int, int] = (400, 28, 720, 96)
 

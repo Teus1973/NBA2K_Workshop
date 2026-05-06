@@ -51,6 +51,7 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset({
     "export_excel",
     "export_gsheets",
     "note",
+    "automation_push",
 })
 
 

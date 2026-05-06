@@ -1,6 +1,18 @@
-**Last updated: 2026-05-03**
+**Last updated: 2026-05-06**
 
 # NBA2K26 Rookie Rating Tool — Release Notes
+
+## v0.9.3 — 2026-05-06
+
+### PS5 push stability, OCR hygiene, and audit visibility
+
+- **Controller bridge** (`src/automation/controller_mapping.py`): rating sweep **starts at index 34** when Edit player mode is off (no wasted iterations over bio/stats). After each rating, **D-pad Right** advances columns (LTR detailed grid). **ROI inset** before Tesseract (**~7 px** left/right, **~4 px** top/bottom) trims yellow column dividers and the in-cell controller glyph while Vision Lab still shows the user’s full ROI box. **Post–D-pad blur settle** (**0.3 s**, `asyncio.sleep` when no event loop is running, else `time.sleep`) runs immediately before OCR capture. **Anchor checks** accept alternate literal PS5 spellings for the intangibles/durability columns. OCR reads **retry** on empty or non-parsable output (**3×**, **0.1 s** backoff). Console **telemetry** per rating cell: `[OCR Read: …] [Target: …] [Pulse Count: …]`; legacy path prints `n/a` for OCR.
+- **Audit** (`src/audit.py`, `src/ui/prospects_tab.py`): every **Push to PS5** completion or failure logs **`automation_push`** (slug + outcome `note`). Clearing the log no longer leaves a “silent” session—new pushes produce rows.
+- **Logs UI** (`src/ui/logs_tab.py`): **Export & clear** surfaced on the main page (CSV respects filters; clear wipes all rows with confirmation + rerun).
+- **Vision Lab** (`src/ui/vision_lab_tab.py`): **grid-start preset** / defaults aligned with the current built-in Chiaki ROI tuple for wide layouts.
+- **Tests** (`tests/test_controller_mapping.py`): shave dimensions, alternate anchor spellings, vgamepad stubs updated for D-pad Right.
+
+---
 
 ## v0.6.2 — 2026-05-03
 

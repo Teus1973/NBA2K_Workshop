@@ -449,13 +449,22 @@ def render() -> None:
             key="prospect_management_slug",
         )
 
-        gp_for_push = st.session_state.get("automation_gamepad")
         if st.button(
             "Push to PS5",
             type="primary",
             key="automation_push_ps5",
             help="Send the selected prospect row to the virtual Xbox 360 controller.",
         ):
+            # Session-backed controls: read at click so the run matches the current UI.
+            gp_for_push = st.session_state.get("automation_gamepad")
+            include_bio = bool(
+                st.session_state.get("automation_edit_player_mode", False),
+            )
+            use_ocr = bool(
+                st.session_state.get("automation_use_ocr_feedback", False),
+            )
+            roi_bbox = automation_ocr_roi_tuple()
+
             if gp_for_push is None:
                 st.warning(
                     "Initialize **Virtual Controller** (Sidebar → **Automation Settings**). "
@@ -466,11 +475,6 @@ def render() -> None:
                 row_list = _prospect_series_to_controller_row(row_series)
                 prog = st.progress(0)
                 status = st.empty()
-                edit_mode = bool(
-                    st.session_state.get("automation_edit_player_mode", False))
-                use_ocr = bool(
-                    st.session_state.get("automation_use_ocr_feedback", False))
-                roi_bbox = automation_ocr_roi_tuple()
 
                 def _on_progress(frac: float, msg: str) -> None:
                     prog.progress(min(1.0, max(0.0, frac)))
@@ -485,21 +489,39 @@ def render() -> None:
                     push_prospect_row_to_controller(
                         row_list,
                         gamepad=gp_for_push,
-                        edit_player_mode=edit_mode,
+                        edit_player_mode=include_bio,
                         use_ocr_feedback=use_ocr,
                         ocr_roi_relative_xywh=roi_bbox if use_ocr else None,
                         on_progress=_on_progress,
                     )
                     prog.progress(1.0)
                     status.caption("Complete.")
+                    audit.log_event(
+                        action="automation_push",
+                        entity_type="prospect",
+                        entity_slug=slug_to_edit,
+                        note=f"completed ocr_feedback={use_ocr} bio={include_bio}",
+                    )
                     st.success("Push to PS5 finished.")
                 except OSError as e:
                     prog.progress(1.0)
                     status.caption("Stopped (driver error).")
+                    audit.log_event(
+                        action="automation_push",
+                        entity_type="prospect",
+                        entity_slug=slug_to_edit,
+                        note=f"driver_error: {e}"[:1800],
+                    )
                     st.error(f"ViGEmBus / driver error: {e}")
                 except Exception as e:
                     prog.progress(1.0)
                     status.caption("Stopped (error).")
+                    audit.log_event(
+                        action="automation_push",
+                        entity_type="prospect",
+                        entity_slug=slug_to_edit,
+                        note=f"error: {e}"[:1800],
+                    )
                     st.error(f"Push to PS5 failed: {e}")
                 finally:
                     neutralize_virtual_stick(gp_for_push)
