@@ -8,7 +8,10 @@ Google-Sheets writer all show identical data.
 
 from __future__ import annotations
 
+import math
 import sqlite3
+from collections.abc import Collection
+from typing import Any
 
 import pandas as pd
 
@@ -18,6 +21,231 @@ from ..logger import get_logger
 from ..scrapers import twokratings as _twok
 
 log = get_logger("exporters.data_loader")
+
+
+def _normalize_slug_filter(slugs: Collection[str] | None) -> tuple[str, ...] | None:
+    if not slugs:
+        return None
+    cleaned = tuple(
+        dict.fromkeys(s.strip() for s in slugs if s is not None and str(s).strip()))
+    return cleaned or None
+
+
+def _sanitize_row_for_rating_input(row: pd.Series) -> dict[str, Any]:
+    """Flatten a merged prospect row into primitives suitable for SQLite + formulas."""
+    d: dict[str, Any] = {}
+    for k, v in row.items():
+        if v is pd.NA:
+            d[k] = None
+            continue
+        try:
+            if pd.isna(v):
+                d[k] = None
+                continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            d[k] = None
+            continue
+        d[k] = v
+    return d
+
+
+def load_single_prospect_row_dict_for_rating(
+    slug: str,
+    *,
+    conn: sqlite3.Connection | None = None,
+    latest_season_only: bool = True,
+    exclude_current_nba: bool = False,
+) -> dict[str, Any] | None:
+    """Assemble stats + combine + coalesced physicals identical to :func:`load_prospects_df`.
+
+    Prospect-tab single recompute historically merged raw SQLite rows without
+    ``combine_*`` renames → formulas saw missing combine inputs; always use this
+    or :func:`load_prospects_df` with ``slugs=`` for parity with bulk compute.
+    """
+    slug_clean = slug.strip()
+    if not slug_clean:
+        return None
+    df = load_prospects_df(
+        conn=conn,
+        latest_season_only=latest_season_only,
+        exclude_current_nba=exclude_current_nba,
+        slugs=[slug_clean],
+    )
+    if df.empty:
+        return None
+    return _sanitize_row_for_rating_input(df.iloc[0])
+
+
+def _series_height_ft_from_display_inches(series: pd.Series) -> pd.Series:
+    """``height_ft`` helper: fractional inches match combine-style tapes when helpful."""
+
+    def cell(h: object) -> str | None:
+        if h is pd.NA:
+            return None
+        try:
+            if pd.isna(h):
+                return None
+        except (TypeError, ValueError):
+            pass
+        try:
+            v = float(h)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(v):
+            return None
+        frac_tail = abs(v - round(v))
+        return height_in_to_ft_str(
+            v,
+            fractional_inches=(frac_tail >= 0.04),
+        )
+
+    return series.map(cell)
+
+
+def _to_merge_int64(series: pd.Series | None) -> pd.Series | None:
+    """Nullable pandas Int64 merge key (NBA combine / roster ids align with ints)."""
+    if series is None:
+        return None
+    return pd.to_numeric(series, errors="coerce").astype("Int64")
+
+
+# Official anthro → formula merge: height **without shoes** aligns with 2K regression baseline
+# (avoids ~+1–1.5\" inflation vs height w/shoes for strength / vertical models).
+_COMBINE_MEASUREMENT_PHYSICAL_RENAME = {
+    "wingspan_in": "combine_wingspan_in",
+    "height_wo_shoes_in": "combine_height_in",
+    "weight_lbs": "combine_weight_lbs",
+}
+
+
+def _prep_combine_measurements_nba(comb_m: pd.DataFrame) -> pd.DataFrame:
+    cm = comb_m[comb_m["subject_key"].str.startswith("nba:", na=False)].copy()
+    if cm.empty:
+        return pd.DataFrame()
+    cm["_nba_pid"] = cm["subject_key"].str[4:]
+    cm = cm[cm["_nba_pid"].str.match(r"^\d+$", na=False)]
+    if cm.empty:
+        return pd.DataFrame()
+    cm["_nba_pid"] = _to_merge_int64(cm["_nba_pid"])
+    cm = cm.sort_values("year").drop_duplicates("_nba_pid", keep="last")
+    drop_meta = {"subject_key", "updated_at"}
+    cols = [c for c in cm.columns if c not in drop_meta]
+    cm = cm[cols].rename(columns=_COMBINE_MEASUREMENT_PHYSICAL_RENAME)
+    if "combine_height_in" not in cm.columns:
+        cm["combine_height_in"] = pd.NA
+    cm = cm.rename(columns={"_nba_pid": "nba_id"})
+    return cm
+
+
+def _prep_combine_measurements_prospect_slug(comb_m: pd.DataFrame) -> pd.DataFrame:
+    cm = comb_m[comb_m["subject_key"].str.startswith(
+        "prospect:", na=False)].copy()
+    if cm.empty:
+        return pd.DataFrame()
+    cm["slug"] = cm["subject_key"].str[len("prospect:"):]
+    cm = cm.sort_values("year").drop_duplicates("slug", keep="last")
+    drop_meta = {"subject_key", "updated_at"}
+    keep = ["slug"] + [
+        c for c in cm.columns
+        if c not in drop_meta and c != "slug"
+    ]
+    out = cm[keep].rename(columns=_COMBINE_MEASUREMENT_PHYSICAL_RENAME)
+    if "combine_height_in" not in out.columns:
+        out["combine_height_in"] = pd.NA
+    return out
+
+
+def _prep_combine_drills_nba(comb_d: pd.DataFrame) -> pd.DataFrame:
+    cd = comb_d[comb_d["subject_key"].str.startswith("nba:", na=False)].copy()
+    if cd.empty:
+        return pd.DataFrame()
+    cd["_nba_pid"] = cd["subject_key"].str[4:]
+    cd = cd[cd["_nba_pid"].str.match(r"^\d+$", na=False)]
+    if cd.empty:
+        return pd.DataFrame()
+    cd["_nba_pid"] = _to_merge_int64(cd["_nba_pid"])
+    cd = cd.sort_values("year").drop_duplicates("_nba_pid", keep="last")
+    drop_meta = {"subject_key", "updated_at"}
+    cols = [c for c in cd.columns if c not in drop_meta]
+    cd = cd[cols].rename(columns={"_nba_pid": "nba_id"})
+    return cd
+
+
+def _prep_combine_drills_prospect_slug(comb_d: pd.DataFrame) -> pd.DataFrame:
+    cd = comb_d[comb_d["subject_key"].str.startswith(
+        "prospect:", na=False)].copy()
+    if cd.empty:
+        return pd.DataFrame()
+    cd["slug"] = cd["subject_key"].str[len("prospect:"):]
+    cd = cd.sort_values("year").drop_duplicates("slug", keep="last")
+    drop_meta = {"subject_key", "updated_at"}
+    extra = [c for c in cd.columns if c not in drop_meta and c != "slug"]
+    return cd[["slug"] + extra]
+
+
+def _coalesce_merge_suffix(
+    df: pd.DataFrame,
+    base_cols: list[str],
+    suffix: str,
+) -> pd.DataFrame:
+    for c in base_cols:
+        r = f"{c}{suffix}"
+        if r not in df.columns:
+            continue
+        if c not in df.columns:
+            df[c] = df[r]
+        else:
+            df[c] = df[c].where(df[c].notna(), df[r])
+        df.drop(columns=[r], inplace=True, errors="ignore")
+    return df
+
+
+def _merge_prospect_combine_measurements(
+    df: pd.DataFrame,
+    comb_m: pd.DataFrame,
+) -> pd.DataFrame:
+    """Left-join NBA combine anthro rows by nullable ``nba_id``, then ``slug``.
+
+    Rows keyed ``prospect:{slug}`` fill gaps when roster id linking failed.
+    """
+    if df.empty or comb_m.empty:
+        return df
+    df = df.copy()
+    if "nba_id" in df.columns:
+        df["nba_id"] = _to_merge_int64(df["nba_id"])
+    nba = _prep_combine_measurements_nba(comb_m)
+    if not nba.empty and "nba_id" in df.columns:
+        df = df.merge(nba, on="nba_id", how="left")
+    slug_part = _prep_combine_measurements_prospect_slug(comb_m)
+    if not slug_part.empty:
+        phys = [c for c in slug_part.columns if c != "slug"]
+        df = df.merge(slug_part, on="slug", how="left", suffixes=("", "_pcomb"))
+        df = _coalesce_merge_suffix(df, phys, "_pcomb")
+    return df
+
+
+def _merge_prospect_combine_drills(
+    df: pd.DataFrame,
+    comb_d: pd.DataFrame,
+) -> pd.DataFrame:
+    if df.empty or comb_d.empty:
+        return df
+    df = df.copy()
+    if "nba_id" in df.columns:
+        df["nba_id"] = _to_merge_int64(df["nba_id"])
+    nba = _prep_combine_drills_nba(comb_d)
+    if not nba.empty and "nba_id" in df.columns:
+        df = df.merge(nba, on="nba_id", how="left")
+    slug_part = _prep_combine_drills_prospect_slug(comb_d)
+    if not slug_part.empty:
+        dcols = [c for c in slug_part.columns if c != "slug"]
+        df = df.merge(
+            slug_part, on="slug", how="left", suffixes=("", "_pdrl"),
+        )
+        df = _coalesce_merge_suffix(df, dcols, "_pdrl")
+    return df
 
 
 def round_float_columns_for_display(
@@ -61,42 +289,73 @@ def is_prospect_on_nba_roster(
 
 # ---------------------------------------------------------------------------
 def _coalesce_nba_physicals(df: pd.DataFrame) -> pd.DataFrame:
-    """Prefer NBA bio values; fill gaps from combine anthro (wingspan often missing in API)."""
+    """Apply official combine anthro first, then listing / bio values."""
     if df.empty:
         return df
-    if not any(
-        c in df.columns
-        for c in ("wingspan_in_combine_m", "weight_lbs_combine_m", "height_w_shoes_in")
-    ):
-        return df
     out = df.copy()
-    if "wingspan_in_combine_m" in out.columns:
-        out["wingspan_in"] = out["wingspan_in"].fillna(
-            out["wingspan_in_combine_m"])
-    if "weight_lbs_combine_m" in out.columns:
-        out["weight_lbs"] = out["weight_lbs"].fillna(out["weight_lbs_combine_m"])
-    if "height_w_shoes_in" in out.columns:
-        out["height_in"] = out["height_in"].fillna(out["height_w_shoes_in"])
+    idx = out.index
+    if "combine_wingspan_in" in out.columns:
+        base = (
+            out["wingspan_in"]
+            if "wingspan_in" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["wingspan_in"] = out["combine_wingspan_in"].where(
+            out["combine_wingspan_in"].notna(), base)
+    if "combine_height_in" in out.columns:
+        base = (
+            out["height_in"]
+            if "height_in" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["height_in"] = out["combine_height_in"].where(
+            out["combine_height_in"].notna(), base)
+    if "combine_weight_lbs" in out.columns:
+        base = (
+            out["weight_lbs"]
+            if "weight_lbs" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["weight_lbs"] = out["combine_weight_lbs"].where(
+            out["combine_weight_lbs"].notna(), base)
     return out
 
 
 def _coalesce_prospect_physicals(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill listing-height / weight / wingspan from prospect combine merge."""
+    """Combine measurements override listing/school physicals when present."""
     if df.empty:
         return df
     if not any(
         c in df.columns
-        for c in ("wingspan_in_combine_m", "weight_lbs_combine_m", "height_w_shoes_in")
+        for c in ("combine_wingspan_in", "combine_height_in", "combine_weight_lbs")
     ):
         return df
     out = df.copy()
-    if "wingspan_in_combine_m" in out.columns:
-        out["wingspan_in"] = out["wingspan_in"].fillna(
-            out["wingspan_in_combine_m"])
-    if "weight_lbs_combine_m" in out.columns:
-        out["weight_lbs"] = out["weight_lbs"].fillna(out["weight_lbs_combine_m"])
-    if "height_w_shoes_in" in out.columns:
-        out["height_in"] = out["height_in"].fillna(out["height_w_shoes_in"])
+    idx = out.index
+    if "combine_wingspan_in" in out.columns:
+        base = (
+            out["wingspan_in"]
+            if "wingspan_in" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["wingspan_in"] = out["combine_wingspan_in"].where(
+            out["combine_wingspan_in"].notna(), base)
+    if "combine_height_in" in out.columns:
+        base = (
+            out["height_in"]
+            if "height_in" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["height_in"] = out["combine_height_in"].where(
+            out["combine_height_in"].notna(), base)
+    if "combine_weight_lbs" in out.columns:
+        base = (
+            out["weight_lbs"]
+            if "weight_lbs" in out.columns
+            else pd.Series(float("nan"), index=idx, dtype="float64")
+        )
+        out["weight_lbs"] = out["combine_weight_lbs"].where(
+            out["combine_weight_lbs"].notna(), base)
     return out
 
 
@@ -138,30 +397,29 @@ def load_reference_df(
         df = df.merge(stats, on="player_id", how="left",
                       suffixes=("", "_stats"))
 
-    # Keep most-recent combine row per player.
+    # Keep most-recent combine row per player (official anthro → combine_* names).
     if not comb_m.empty:
-        comb_m["_pid"] = comb_m["subject_key"].str.replace("nba:", "", regex=False)
-        comb_m = comb_m[comb_m["_pid"].str.isdigit()].copy()
-        comb_m["player_id"] = comb_m["_pid"].astype(int)
-        comb_m = comb_m.sort_values("year").drop_duplicates(
-            "player_id", keep="last")
-        df = df.merge(
-            comb_m.drop(columns=["_pid", "subject_key"], errors="ignore"),
-            on="player_id", how="left", suffixes=("", "_combine_m"))
+        nba_m = _prep_combine_measurements_nba(comb_m)
+        if not nba_m.empty:
+            nba_m = nba_m.rename(columns={"nba_id": "player_id"})
+            df["player_id"] = _to_merge_int64(df["player_id"])
+            nba_m["player_id"] = _to_merge_int64(nba_m["player_id"])
+            df = df.merge(nba_m, on="player_id", how="left", suffixes=("", "_cm"))
     if not comb_d.empty:
-        comb_d["_pid"] = comb_d["subject_key"].str.replace("nba:", "", regex=False)
-        comb_d = comb_d[comb_d["_pid"].str.isdigit()].copy()
-        comb_d["player_id"] = comb_d["_pid"].astype(int)
-        comb_d = comb_d.sort_values("year").drop_duplicates(
-            "player_id", keep="last")
-        df = df.merge(
-            comb_d.drop(columns=["_pid", "subject_key"], errors="ignore"),
-            on="player_id", how="left", suffixes=("", "_combine_d"))
+        nba_d = _prep_combine_drills_nba(comb_d)
+        if not nba_d.empty:
+            nba_d = nba_d.rename(columns={"nba_id": "player_id"})
+            df["player_id"] = _to_merge_int64(df["player_id"])
+            nba_d["player_id"] = _to_merge_int64(nba_d["player_id"])
+            df = df.merge(nba_d, on="player_id", how="left", suffixes=("", "_cd"))
 
     df = _coalesce_nba_physicals(df)
 
     df = df.copy()
-    df["height_ft"] = df["height_in"].apply(height_in_to_ft_str)
+    disp = df["height_in"].copy()
+    if "height_wo_shoes_in" in df.columns:
+        disp = disp.fillna(df["height_wo_shoes_in"])
+    df = df.assign(height_ft=_series_height_ft_from_display_inches(disp))
 
     # Preferred column ordering for the UI.
     front = [
@@ -188,12 +446,18 @@ def load_prospects_df(
     conn: sqlite3.Connection | None = None,
     latest_season_only: bool = True,
     exclude_current_nba: bool = True,
+    slugs: Collection[str] | None = None,
 ) -> pd.DataFrame:
     """Prospects sheet: one row per prospect with stats + combine + computed ratings.
 
     When ``exclude_current_nba`` is True, rows matching a current ``nba_players``
     slug or full name are dropped (ESPN boards sometimes list NBA veterans).
+
+    ``slugs`` optionally restricts rows (and trims ``prospect_stats`` /
+    ``prospect_ratings_computed``) for fast single-row merges identical to bulk.
     """
+    slugs_f = _normalize_slug_filter(slugs)
+
     conn, own = _maybe_conn(conn)
     try:
         nba_slugs: set[str] = set()
@@ -201,7 +465,18 @@ def load_prospects_df(
         if exclude_current_nba:
             nba_slugs, nba_names = nba_roster_match_sets(conn)
 
-        prospects = pd.read_sql_query("SELECT * FROM prospects", conn)
+        pq = "SELECT * FROM prospects"
+        p_params: list[str] | None = None
+        if slugs_f:
+            placeholders = ",".join("?" * len(slugs_f))
+            pq += f" WHERE slug IN ({placeholders})"
+            p_params = list(slugs_f)
+
+        prospects = (
+            pd.read_sql_query(pq, conn, params=p_params)
+            if p_params is not None
+            else pd.read_sql_query(pq, conn))
+
         if prospects.empty:
             return pd.DataFrame()
         if exclude_current_nba and (nba_slugs or nba_names):
@@ -214,15 +489,18 @@ def load_prospects_df(
             prospects = prospects[mask].copy()
             if prospects.empty:
                 return pd.DataFrame()
+
         stats = pd.read_sql_query("SELECT * FROM prospect_stats", conn)
+        if slugs_f and not stats.empty:
+            stats = stats[stats["slug"].isin(slugs_f)].copy()
         comb_m = pd.read_sql_query(
-            "SELECT * FROM combine_measurements "
-            "WHERE subject_key LIKE 'prospect:%'", conn)
+            "SELECT * FROM combine_measurements", conn)
         comb_d = pd.read_sql_query(
-            "SELECT * FROM combine_drills "
-            "WHERE subject_key LIKE 'prospect:%'", conn)
+            "SELECT * FROM combine_drills", conn)
         computed = pd.read_sql_query(
             "SELECT * FROM prospect_ratings_computed", conn)
+        if slugs_f and not computed.empty:
+            computed = computed[computed["slug"].isin(slugs_f)].copy()
     finally:
         if own:
             conn.close()
@@ -230,35 +508,40 @@ def load_prospects_df(
     df = prospects.copy()
     if not stats.empty:
         if latest_season_only:
-            stats = stats.sort_values("season").drop_duplicates(
-                "slug", keep="last")
+            yr_extract = pd.to_numeric(
+                stats["season"].astype(str).str.extract(
+                    r"(\d{4})", expand=False),
+                errors="coerce").fillna(-1)
+            stats = (
+                stats.assign(_season_yr=yr_extract)
+                .sort_values(
+                    by=["slug", "_season_yr", "season"], kind="mergesort")
+                .drop_duplicates("slug", keep="last")
+                .drop(columns=["_season_yr"]))
         df = df.merge(stats, on="slug", how="left", suffixes=("", "_stats"))
-    if not comb_m.empty:
-        comb_m["slug"] = comb_m["subject_key"].str.replace(
-            "prospect:", "", regex=False)
-        comb_m = comb_m.drop(columns=["subject_key"])
-        comb_m = comb_m.sort_values("year").drop_duplicates("slug", keep="last")
-        df = df.merge(comb_m, on="slug", how="left", suffixes=("", "_combine_m"))
-    if not comb_d.empty:
-        comb_d["slug"] = comb_d["subject_key"].str.replace(
-            "prospect:", "", regex=False)
-        comb_d = comb_d.drop(columns=["subject_key"])
-        comb_d = comb_d.sort_values("year").drop_duplicates("slug", keep="last")
-        df = df.merge(comb_d, on="slug", how="left", suffixes=("", "_combine_d"))
+    df = _merge_prospect_combine_measurements(df, comb_m)
+    df = _merge_prospect_combine_drills(df, comb_d)
     if not computed.empty:
         df = df.merge(computed, on="slug", how="left",
                       suffixes=("", "_rating"))
 
     df = _coalesce_prospect_physicals(df)
-    h_disp = df["height_in"]
+    disp = df["height_in"].copy()
     if "height_wo_shoes_in" in df.columns:
-        h_disp = h_disp.fillna(df["height_wo_shoes_in"])
-    df = df.copy()
-    df["height_ft"] = h_disp.apply(height_in_to_ft_str)
+        disp = disp.fillna(df["height_wo_shoes_in"])
+    df = df.assign(height_ft=_series_height_ft_from_display_inches(disp))
 
-    # Fixed 87-column workbook order + any extra DB columns after.
+    # Fixed 87-column workbook order + any extra DB columns after (automation
+    # still uses PROSPECTS_TABLE_COLUMNS order; we only rearrange display/export).
     preferred = [c for c in config.PROSPECTS_TABLE_COLUMNS if c in df.columns]
     rest = [c for c in df.columns if c not in preferred]
+    if "height_ft" in rest:
+        rest.remove("height_ft")
+        try:
+            hi_ix = preferred.index("height_in")
+            preferred.insert(hi_ix + 1, "height_ft")
+        except ValueError:
+            preferred.insert(0, "height_ft")
     out = df[preferred + rest].copy()
     if "espn_rank" in out.columns:
         out = out.sort_values("espn_rank", na_position="last")

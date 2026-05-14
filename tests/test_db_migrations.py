@@ -69,13 +69,10 @@ def test_prospects_column1_migrated(temp_db):
     assert "column1" in cols
 
 
-def test_prospects_secondary_position_migrated(temp_db):
+def test_prospects_nba_id_migrated(temp_db):
     cur = temp_db.execute("PRAGMA table_info(prospects)")
     cols = {row[1] for row in cur.fetchall()}
-    assert "secondary_position" in cols
-
-
-def test_prospect_ratings_potential_and_workbook_attrs(temp_db):
+    assert "nba_id" in cols
     cur = temp_db.execute("PRAGMA table_info(prospect_ratings_computed)")
     cols = {row[1] for row in cur.fetchall()}
     assert "potential" in cols

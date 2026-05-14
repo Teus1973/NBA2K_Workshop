@@ -13,7 +13,13 @@ Key responsibilities:
   :mod:`src.calibration.build_corpus`).
 - Apply the combine override path: if ``c_speed_2k`` / ``c_agility_2k`` /
   ``c_vertical_2k`` are present on the prospect, they win over the regressed
-  ``speed_2k`` / ``agility_2k`` / ``vertical_2k`` formulas.
+  ``speed_2k`` / ``agility_2k`` / ``vertical_2k`` formulas (imported scores are
+  gently elevated for elites before clamping).
+- When ``max_vert_in`` is present and ``c_vertical_2k`` is not, calibrated
+  mode maps vertical via :func:`~src.formulas.excel_2026_class.vertical_2k_from_max_vert_inches`.
+- Official combine ``combine_height_in`` is loaded from measured **height
+  without shoes** (``combine_measurements.height_wo_shoes_in``) so calibrated
+  features align with regression / 2K baselines (avoiding inflated height-with-shoes).
 - Apply the league-3pt-line penalty to ``three_point_shot_2k`` for non-NBA
   leagues (NCAA / FIBA-line / HS).
 - Apply the height-delta reconciliation: if ``height_wo_shoes_in`` is present
@@ -34,6 +40,7 @@ import numpy as np
 
 from .. import config
 from ..logger import get_logger
+from .excel_2026_class import vertical_2k_from_max_vert_inches
 from .registry import FormulaRegistry
 
 log = get_logger("formulas.apply")
@@ -200,16 +207,25 @@ def build_feature_vector(prospect: Mapping[str, Any],
     :mod:`src.calibration.build_corpus`."""
     f: dict[str, float] = {}
 
-    # -- physicals ------------------------------------------------------
-    height_in = _safe_float(prospect.get("height_in"))
+    # -- physicals (official combine first; see :func:`data_loader._coalesce_prospect_physicals`) --
+    ch = _safe_float(prospect.get("combine_height_in"))
+    height_in = ch
+    if height_in is None:
+        height_in = _safe_float(prospect.get("height_in"))
     height_wo = _safe_float(prospect.get("height_wo_shoes_in"))
     if height_in is None and height_wo is not None:
         bucket = _pos_bucket(prospect.get("pos"))
         height_in = height_wo + registry.height_delta(bucket)
 
-    weight_lbs = _safe_float(prospect.get("weight_lbs"))
-    wingspan_in = _safe_float(prospect.get("wingspan_in")) or \
-                   _safe_float(prospect.get("combine_wingspan_in"))
+    cw = _safe_float(prospect.get("combine_weight_lbs"))
+    weight_lbs = cw
+    if weight_lbs is None:
+        weight_lbs = _safe_float(prospect.get("weight_lbs"))
+
+    wcomb = _safe_float(prospect.get("combine_wingspan_in"))
+    wingspan_in = wcomb
+    if wingspan_in is None:
+        wingspan_in = _safe_float(prospect.get("wingspan_in"))
 
     if height_in is not None:
         f["height_in"] = height_in
@@ -460,6 +476,55 @@ def _apply_scouting_physical_proxy(
             provenance.mark("stamina_2k", "scouting_proxy")
 
 
+_COMBINE_IMPORT_ELEV_KEYS: frozenset[str] = frozenset({
+    "c_speed_2k", "c_agility_2k", "c_vertical_2k", "c_speed_with_ball_2k",
+})
+
+
+def _elevate_combine_import_rating(src_col: str, val: int) -> int:
+    """Soften strict combine→2K regression heads for draft-class elites (cap 99)."""
+    iv = max(25, min(99, int(val)))
+    if src_col not in _COMBINE_IMPORT_ELEV_KEYS:
+        return iv
+    if iv >= 93:
+        iv = min(99, iv + 2)
+    elif iv >= 89:
+        iv = min(99, iv + 3)
+    elif iv >= 84:
+        iv = min(99, iv + 2)
+    elif iv >= 78:
+        iv = min(99, iv + 1)
+    return iv
+
+
+def _prospect_has_combine_vertical_rating(prospect: Mapping[str, Any]) -> bool:
+    v = prospect.get("c_vertical_2k")
+    if v is None or v is False:
+        return False
+    try:
+        ival = int(round(float(v)))
+    except (TypeError, ValueError):
+        return False
+    return 25 <= ival <= 99
+
+
+def _apply_vertical_from_combine_max(
+    computed: dict[str, Any],
+    provenance: Provenance,
+    prospect: Mapping[str, Any],
+) -> None:
+    """When ``c_vertical_2k`` is absent, reshape ``vertical_2k`` from Combine max leap."""
+    if _prospect_has_combine_vertical_rating(prospect):
+        return
+    mv = _safe_float(prospect.get("max_vert_in"))
+    if mv is None or mv <= 0:
+        return
+    if "vertical_2k" not in computed or computed["vertical_2k"] is None:
+        return
+    computed["vertical_2k"] = vertical_2k_from_max_vert_inches(mv)
+    provenance.mark("vertical_2k", "combine_max_vert")
+
+
 def _apply_combine_override(
     computed: dict[str, Any],
     provenance: Provenance,
@@ -481,7 +546,7 @@ def _apply_combine_override(
             ival = int(round(float(val)))
         except (TypeError, ValueError):
             continue
-        computed[target] = max(25, min(99, ival))
+        computed[target] = _elevate_combine_import_rating(src_col, ival)
         provenance.mark(target, "combine")
 
 
@@ -619,6 +684,7 @@ def apply_formulas(
             provenance.mark(attr, "formula")
 
         _apply_combine_override(computed, provenance, player_data)
+        _apply_vertical_from_combine_max(computed, provenance, player_data)
         _apply_scouting_physical_proxy(computed, provenance, player_data)
         _apply_league_3pt_penalty(computed, provenance, player_data)
 

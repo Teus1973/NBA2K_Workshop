@@ -1,6 +1,20 @@
-**Last updated: 2026-05-06**
+**Last updated: 2026-05-14**
 
 # NBA2K26 Rookie Rating Tool — Release Notes
+
+## v0.9.4 — 2026-05-14
+
+### Draft Combine ingestion, prospect linking, and merge pipeline
+
+- **`src/scrapers/nba_combine.py`**: fetch **DraftCombinePlayerAnthro** and **DraftCombineDrillResults** for **NBA + G-League**, prefer NBA on duplicate keys; skip refetch when cache JSON is empty; map combine `PLAYER_ID` to workshop slugs via `prospects.nba_id`, normalized name resolution (generational suffix stripping), first-name aliases (**Nate** ↔ **Nathaniel**), and mirror rows as `prospect:{slug}` beside `nba:{id}` upserts.
+- **`src/utils.py`**: central **`KNOWN_NBA_IDS`** slug → combine `PLAYER_ID` pins for names that still diverge between ESPN and `nba.com`.
+- **`src/db.py` / `src/exporters/data_loader.py`**: `prospects.nba_id` join path plus slug-keyed combine mirrors; **`combine_height_in`** maps from height **without shoes**; coalesced prospect physicals / reference merges updated accordingly.
+- **`src/formatting.py`**: optional **fractional-inch** height display strings for combine-style tapes.
+- **`src/formulas/`** (`apply.py`, `excel_2026_class.py`): align combine-driven features and vertical handling with merged prospect rows.
+- **Exporters / UI**: Excel, Google Sheets, and Prospects paths stay consistent with widened prospect column merge behavior where applicable.
+- **Tests**: `tests/test_nba_combine_names.py`; updates across DB migration, Excel column, formatting, and formula tests.
+
+---
 
 ## v0.9.3 — 2026-05-06
 

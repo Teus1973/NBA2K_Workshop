@@ -32,8 +32,13 @@ SCOPES = [
 TOKEN_PATH = config.get_user_data_dir() / "gsheets_token.json"
 
 
-def _apply_prospects_sheet_focus(service: Any, spreadsheet_id: str) -> None:
-    """Hide cols A–B and stats band **O–AH** (indices **14–33**); freeze row 1 + 4 cols."""
+def _apply_prospects_sheet_focus(
+    service: Any,
+    spreadsheet_id: str,
+    *,
+    prospects_column_count: int,
+) -> None:
+    """Hide cols A–B and stats band… only when sheet matches legacy narrow layouts."""
     meta = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         fields="sheets.properties",
@@ -46,6 +51,7 @@ def _apply_prospects_sheet_focus(service: Any, spreadsheet_id: str) -> None:
             break
     if prospects_sid is None:
         return
+
     requests_body: list[dict[str, Any]] = [
         {
             "updateSheetProperties": {
@@ -59,31 +65,40 @@ def _apply_prospects_sheet_focus(service: Any, spreadsheet_id: str) -> None:
                 "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
             }
         },
-        {
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": prospects_sid,
-                    "dimension": "COLUMNS",
-                    "startIndex": 0,
-                    "endIndex": 2,
-                },
-                "properties": {"hiddenByUser": True},
-                "fields": "hiddenByUser",
-            }
-        },
-        {
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": prospects_sid,
-                    "dimension": "COLUMNS",
-                    "startIndex": 14,
-                    "endIndex": 34,
-                },
-                "properties": {"hiddenByUser": True},
-                "fields": "hiddenByUser",
-            }
-        },
     ]
+    # Wide Prospects layouts (stats + ratings + trailing combine/meta columns):
+    # old hard-coded hides targeted the 44‑col workbook and would swallow the
+    # wrong columns once the dataframe grew wider.
+    if prospects_column_count <= 52:
+        requests_body.extend(
+            [
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": prospects_sid,
+                            "dimension": "COLUMNS",
+                            "startIndex": 0,
+                            "endIndex": 2,
+                        },
+                        "properties": {"hiddenByUser": True},
+                        "fields": "hiddenByUser",
+                    }
+                },
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": prospects_sid,
+                            "dimension": "COLUMNS",
+                            "startIndex": 14,
+                            "endIndex": 34,
+                        },
+                        "properties": {"hiddenByUser": True},
+                        "fields": "hiddenByUser",
+                    }
+                },
+            ]
+        )
+
     service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body={"requests": requests_body},
@@ -185,7 +200,11 @@ def export_to_gsheets(
     write("Logs", log_df)
     write("Formulas", for_df)
 
-    _apply_prospects_sheet_focus(service, sheet_id)
+    _apply_prospects_sheet_focus(
+        service,
+        sheet_id,
+        prospects_column_count=len(pro_df.columns),
+    )
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
     audit.log_event(

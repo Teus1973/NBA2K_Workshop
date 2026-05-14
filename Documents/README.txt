@@ -1,4 +1,4 @@
-**Last updated: 2026-05-06**
+**Last updated: 2026-05-14**
 
 # NBA2K26 Rookie Rating Tool (NBA2K Workshop)
 
@@ -91,7 +91,7 @@ All automation aligns with the **`PROSPECTS_TABLE_COLUMNS`** **87-column** workb
 - **Vision Lab** (dedicated tab): crop preview and OCR readout for the live Chiaki window; ROI session state is shared with automation OCR overrides (chiaki-relative **x, y, width, height**).
 - **Safety**: **`finally`** neutralizes the virtual stick to **`(0, 0)`**; **`try`/`except`** surfaces ViGEmBus / **`OSError`** paths in the UI.
 
-See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes; **v0.6.2** for Vision Lab / OCR stack; **v0.9.3** for PS5 push / OCR stability and audit logging.
+See **`Documents/RELEASE_NOTES.md`** (v0.4.0) for **+1** rating scaling notes; **v0.6.2** for Vision Lab / OCR stack; **v0.9.3** for PS5 push / OCR stability and audit logging; **v0.9.4** for combine ↔ prospect linking and merge behavior.
 
 ---
 
@@ -119,7 +119,7 @@ NBA2K_Workshop\
     user_uploads\              your CSV/XLSX imports
     exports\                   generated .xlsx files
   src\
-    config.py, logger.py, db.py, audit.py, bulk_recalc.py, scouting_persist.py
+    config.py, logger.py, db.py, audit.py, bulk_recalc.py, scouting_persist.py, utils.py (KNOWN_NBA_IDS ↔ combine PLAYER_ID pins)
     automation\controller_mapping.py   UI-to-console bridge (vgamepad / 87-column map)
     scrapers\{twokratings,nba_stats,nba_combine,espn_bigboard,espn_mens_cbb,
               sports_reference_cbb,international,scouting,wikidata,stat_normalize}.py
@@ -147,6 +147,16 @@ NBA2K_Workshop\
 | `proballers.com` / Euroleague | international stats (NZNBL, NBL, Euroleague, ACB, LNB) | `src/scrapers/international.py` |
 
 Rate-limit knobs live in `.env` (`NBA2K_WORKSHOP_SCRAPE_RPS`, `NBA2K_WORKSHOP_USER_AGENT`). All raw responses are cached under `data/cache/` and only refetched when TTL expires or a user explicitly triggers a refresh.
+
+---
+
+## Draft Combine ↔ big-board prospects
+
+Combine **anthro** and **drills** are fetched for **NBA + G-League** via `nba_api` (merged with NBA rows preferred when the same player appears twice). Data is keyed as `nba:{PLAYER_ID}` in SQLite and **mirrored** to `prospect:{slug}` when the workshop resolves the athlete: existing `prospects.nba_id`, a unique normalized `full_name` match against combine `PLAYER_NAME` (including generational suffix handling for Jr./III), optional **first-name aliases** where boards differ from the official feed (**Nate** ↔ **Nathaniel** on the same surname), and hard pins in **`KNOWN_NBA_IDS`** (`src/utils.py`) when names drift badly.
+
+After refreshing combine data (**Settings → Scrape NBA combine** or equivalent), run **Recompute prospect ratings** so merged `combine_*` columns flow into formulas and the Prospects UI.
+
+Regression coverage: `tests/test_nba_combine_names.py`.
 
 ---
 

@@ -21,7 +21,7 @@ from .logger import get_logger
 
 log = get_logger("db")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Integer rating columns added after v3 (workbook-aligned schema).
 _RATING_COLUMNS_V4: tuple[str, ...] = (
@@ -267,6 +267,9 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
 )
 
+# Note: ``prospects.nba_id`` is added in :func:`_migrate_schema` (v7+) for
+# joining ``combine_measurements`` rows keyed as ``nba:{id}``.
+
 
 def _add_columns_if_missing(
     cur: sqlite3.Cursor, table: str, definitions: list[tuple[str, str]],
@@ -297,6 +300,9 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     _add_columns_if_missing(cur, "prospects", [("column1", "TEXT")])
     _add_columns_if_missing(cur, "prospects", [
         ("secondary_position", "TEXT"),
+    ])
+    _add_columns_if_missing(cur, "prospects", [
+        ("nba_id", "INTEGER"),
     ])
 
     new_ints = [(c, "INTEGER") for c in _RATING_COLUMNS_V4]

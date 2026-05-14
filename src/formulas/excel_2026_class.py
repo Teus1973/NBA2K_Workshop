@@ -122,6 +122,7 @@ class _X:
     c: str  # position text
     ws: float  # wingspan (in), estimated if missing
     la: float | None  # lane_agility_sec (optional combine)
+    mv: float | None  # max vertical leap inches (combine drills)
 
 
 def _f(v: Any) -> float:
@@ -172,9 +173,15 @@ def _pos_upper(c: str) -> str:
 
 
 def _row_from_prospect(p: Mapping[str, Any]) -> _X:
+    ch = _f(p.get("combine_height_in"))
+    gh = _f(p.get("height_in"))
+    g = ch if ch > 0 else gh
+    cw = _f(p.get("combine_weight_lbs"))
+    hw = _f(p.get("weight_lbs"))
+    h = cw if cw > 0 else hw
     return _X(
-        g=_f(p.get("height_in")),
-        h=_f(p.get("weight_lbs")),
+        g=g,
+        h=h,
         i=_f(p.get("gp")),
         j=_f(p.get("min")),
         k=_f(p.get("pts")),
@@ -207,15 +214,16 @@ def _row_from_prospect(p: Mapping[str, Any]) -> _X:
         c=str(p.get("pos") or ""),
         ws=_wingspan_in(p),
         la=_lane_agility(p),
+        mv=_max_vert_inches(p),
     )
 
 
 def _wingspan_in(p: Mapping[str, Any]) -> float:
-    for k in ("wingspan_in", "combine_wingspan_in", "wingspan"):
+    for k in ("combine_wingspan_in", "wingspan_in", "wingspan"):
         w = _f(p.get(k))
         if w > 0:
             return w
-    g = _f(p.get("height_in"))
+    g = _f(p.get("combine_height_in")) or _f(p.get("height_in"))
     if g > 0:
         return g + _DEFAULT_WINGSPAN_OFFSET_IN
     return 0.0
@@ -233,6 +241,39 @@ def _lane_agility(p: Mapping[str, Any]) -> float | None:
         if x > 0 and not (math.isnan(x) or math.isinf(x)):
             return x
     return None
+
+
+def _max_vert_inches(p: Mapping[str, Any]) -> float | None:
+    for k in ("max_vert_in", "MAX_VERTICAL_LEAP"):
+        v = p.get(k)
+        if v is None:
+            continue
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            continue
+        if x > 0 and not (math.isnan(x) or math.isinf(x)):
+            return x
+    return None
+
+
+def vertical_2k_from_max_vert_inches(max_vert_in: float) -> int:
+    """2K-scale vertical strictly from Combine max leap (elite ~40½\" ⇒ 92+).
+
+    Clamp to **[25, 99]** with an explicit elite floor once **≥ 40½\"**.
+    """
+    mv = float(max_vert_in)
+    if not math.isfinite(mv):
+        return 25
+    if mv <= 0:
+        return 25
+    linear = ((mv - 24.0) / 18.0) * 74.0 + 25.0
+    out = int(linear)
+    if mv >= 40.5:
+        out = max(out, 92)
+    elif mv >= 40.0:
+        out = max(out, 90)
+    return max(25, min(99, out))
 
 
 def _weight_for_defense(n: _X) -> float:
@@ -330,6 +371,8 @@ def _speed_with_ball(n: _X, st: Mapping[str, int]) -> int:
 
 
 def _vertical(n: _X, st: Mapping[str, int]) -> int:
+    if n.mv is not None and n.mv > 0:
+        return vertical_2k_from_max_vert_inches(n.mv)
     if n.j <= 0:
         return 0
     bb = _st_get(st, "speed_2k")
@@ -827,7 +870,8 @@ def calculate_excel_2026_ratings(player_data: dict) -> dict:
         except (TypeError, ValueError):
             return default
 
-    height_in = _num("height_in")
+    c_h = _num("combine_height_in")
+    height_in = c_h if c_h > 0 else _num("height_in")
     age = _num("age", 19.0)
     close_s = _num("close_shot_2k", 60.0)
     post_c = _num("post_control_2k", 60.0)

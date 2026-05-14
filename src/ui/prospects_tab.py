@@ -166,35 +166,13 @@ def _recompute_one(slug: str, manual_overrides: dict[str, int] | None = None) ->
 
     reg = _registry.load_registry()
     conn = db.connect()
+    ratings: dict[str, int] = {}
     try:
-        row = conn.execute(
-            "SELECT * FROM prospects WHERE slug=?", (slug,)
-        ).fetchone()
-        if not row:
-            return {}
-        prospect = dict(row)
-        stats = conn.execute(
-            "SELECT * FROM prospect_stats WHERE slug=? ORDER BY season DESC LIMIT 1",
-            (slug,),
-        ).fetchone()
-        if stats:
-            for k in stats.keys():
-                if k != "slug":
-                    prospect[k] = stats[k]
-        comb_m = conn.execute(
-            "SELECT * FROM combine_measurements WHERE subject_key=? "
-            "ORDER BY year DESC LIMIT 1", (f"prospect:{slug}",),
-        ).fetchone()
-        if comb_m:
-            for k in comb_m.keys():
-                prospect.setdefault(k, comb_m[k])
-        comb_d = conn.execute(
-            "SELECT * FROM combine_drills WHERE subject_key=? "
-            "ORDER BY year DESC LIMIT 1", (f"prospect:{slug}",),
-        ).fetchone()
-        if comb_d:
-            for k in comb_d.keys():
-                prospect.setdefault(k, comb_d[k])
+        prospect = data_loader.load_single_prospect_row_dict_for_rating(
+            slug, conn=conn, exclude_current_nba=False,
+        )
+        if not prospect:
+            return ratings
 
         ratings, _prov = fapply.apply_to_prospect(
             prospect, reg, manual_overrides=manual_overrides)

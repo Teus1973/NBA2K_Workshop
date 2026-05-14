@@ -1,4 +1,4 @@
-"""Excel Prospects sheet: fixed 44-column download slice (UI table unchanged)."""
+"""Excel Prospects sheet: download slice = bio + ``height_ft`` + stats + ratings."""
 
 from __future__ import annotations
 
@@ -13,21 +13,25 @@ from src.exporters import excel_writer
 
 def test_excel_download_column_keys_count_and_order() -> None:
     cols = excel_writer.PROSPECTS_EXCEL_DOWNLOAD_COLUMNS
-    assert len(cols) == 44
-    assert cols[:7] == (
+    n_stat = len(config.STAT_COLUMNS)
+    n_rtg = len(config.RATING_ATTRIBUTES)
+    assert len(cols) == 8 + n_stat + n_rtg
+    assert cols[:8] == (
         "last_name",
         "first_name",
         "pos",
         "secondary_position",
         "age",
         "height_in",
+        "height_ft",
         "weight_lbs",
     )
-    assert cols[7:] == tuple(config.RATING_ATTRIBUTES)
+    assert cols[8 : 8 + n_stat] == tuple(config.STAT_COLUMNS)
+    assert cols[8 + n_stat :] == tuple(config.RATING_ATTRIBUTES)
 
 
 def test_export_prospects_sheet_headers_and_width() -> None:
-    """Built workbook Prospects row 1 matches spec; only 44 data columns."""
+    """Prospects row 1: friendly headers for leading physical cols; stats use DB keys."""
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
     tmp.close()
     path = tmp.name
@@ -40,16 +44,20 @@ def test_export_prospects_sheet_headers_and_width() -> None:
         finally:
             wb.close()
         names = [c for c in row if c is not None and str(c).strip() != ""]
-        assert len(names) == 44
-        assert names[:7] == [
+        n_stat = len(config.STAT_COLUMNS)
+        n_rtg = len(config.RATING_ATTRIBUTES)
+        assert len(names) == 8 + n_stat + n_rtg
+        assert names[:8] == [
             "last_name",
             "first_name",
             "Pos",
             "secondary_position",
             "Age",
-            "Height",
-            "weight_lbs",
+            "Height (in)",
+            "Height (ft)",
+            "Weight (lbs)",
         ]
-        assert names[7:] == list(config.RATING_ATTRIBUTES)
+        assert names[8 : 8 + n_stat] == list(config.STAT_COLUMNS)
+        assert names[8 + n_stat :] == list(config.RATING_ATTRIBUTES)
     finally:
         Path(path).unlink(missing_ok=True)

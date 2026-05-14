@@ -65,12 +65,16 @@ def recompute_prospect_ratings(
         conn = db.connect()
         own = True
     n = 0
+    wingspan_combine_hits = 0
     try:
         if own:
             conn.execute("PRAGMA busy_timeout=120000")
         pros = data_loader.load_prospects_df(conn=conn, exclude_current_nba=True)
         if pros.empty:
             return 0
+        if "combine_wingspan_in" in pros.columns:
+            wingspan_combine_hits = int(pros["combine_wingspan_in"].notna().sum())
+
         total = len(pros)
         report_at = _progress_indices(total) if progress_cb else set()
 
@@ -120,6 +124,9 @@ def recompute_prospect_ratings(
     audit.log_event(
         action="rating_recalc",
         entity_type="prospect",
-        note=f"{audit_note}: {n} prospects",
+        note=(
+            f"{audit_note}: {n} prospects; "
+            f"combine_wingspan_in_override_hits={wingspan_combine_hits}"
+        ),
     )
     return n

@@ -52,7 +52,8 @@ def render_workbook_export_section(
         st.caption(
             "**CSV** exports are plain text — no frozen panes or hidden columns. "
             "**Build Excel workbook** writes Reference + Prospects + … ; **Prospects** "
-            "is a 44-column ratings-focused sheet (freeze row 1 / columns A–B)."
+            "includes **Height (ft)** immediately after Height (in), the full "
+            "**per‑game stats** band, then 2K ratings (freeze row 1 / cols A–B)."
         )
         b1, b2 = st.columns(2)
         with b1:

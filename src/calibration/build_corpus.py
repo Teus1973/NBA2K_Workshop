@@ -125,10 +125,11 @@ def build(opts: CorpusOptions | None = None,
         how="left",
     )
 
-    # Fill wingspan_in from combine when the player page didn't have one.
-    if "wingspan_in" in df.columns:
-        df["wingspan_in"] = df["wingspan_in"].fillna(df["combine_wingspan_in"])
-    else:
+    # Combine-first wingspan (aligned with :mod:`src.exporters.data_loader`).
+    if "wingspan_in" in df.columns and "combine_wingspan_in" in df.columns:
+        df["wingspan_in"] = df["combine_wingspan_in"].where(
+            df["combine_wingspan_in"].notna(), df["wingspan_in"])
+    elif "combine_wingspan_in" in df.columns:
         df["wingspan_in"] = df["combine_wingspan_in"]
 
     # Derived physical features

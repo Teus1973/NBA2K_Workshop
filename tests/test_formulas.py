@@ -91,7 +91,7 @@ def test_combine_override_wins_over_formula(tmp_path):
         "c_speed_2k": 85,
     }
     ratings, prov = fapply.apply_to_prospect(prospect, reg)
-    assert ratings["speed_2k"] == 85
+    assert ratings["speed_2k"] == 87
     assert prov.to_dict()["speed_2k"] == "combine"
 
 

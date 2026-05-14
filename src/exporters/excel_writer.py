@@ -5,9 +5,8 @@ Builds a four-sheet workbook (Reference / Prospects / Logs / Formulas). The
 Prospects sheet can color-code cells by provenance when ``slug`` is included in
 the exported columns (download slice omits it, so coloring is skipped there).
 
-The downloaded **Prospects** sheet is a fixed **44**-column slice (names, bio,
-then all **2K** ratings in template order). Row **1** uses friendly headers
-(**Pos** / **Age** / **Height**); freeze panes **C2**. Other sheets are unchanged.
+The downloaded **Prospects** sheet carries **names, bio, height (in/ft), full
+per-game stat band, then 2K ratings** in template rating order. Freeze panes **C2**.
 """
 
 from __future__ import annotations
@@ -27,10 +26,8 @@ from . import data_loader
 
 log = get_logger("exporters.excel_writer")
 
-# Prospects download: stable column order (internal dataframe keys). Headers for
-# ``pos`` / ``age`` / ``height_in`` are rewritten on row 1 (see
-# :data:`_EXCEL_HEADER_DISPLAY`). Does not affect :data:`config.PROSPECTS_TABLE_COLUMNS`
-# or Streamlit tables.
+# Prospects download: stable column order (internal dataframe keys). Friendly
+# headers for a few leading physical columns (see :data:`_EXCEL_HEADER_DISPLAY`).
 PROSPECTS_EXCEL_DOWNLOAD_COLUMNS: tuple[str, ...] = (
     "last_name",
     "first_name",
@@ -38,13 +35,16 @@ PROSPECTS_EXCEL_DOWNLOAD_COLUMNS: tuple[str, ...] = (
     "secondary_position",
     "age",
     "height_in",
+    "height_ft",
     "weight_lbs",
-) + config.RATING_ATTRIBUTES
+) + config.STAT_COLUMNS + config.RATING_ATTRIBUTES
 
 _EXCEL_HEADER_DISPLAY: dict[str, str] = {
     "pos": "Pos",
     "age": "Age",
-    "height_in": "Height",
+    "height_in": "Height (in)",
+    "height_ft": "Height (ft)",
+    "weight_lbs": "Weight (lbs)",
 }
 
 

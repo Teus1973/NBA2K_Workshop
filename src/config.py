@@ -190,8 +190,10 @@ def set_rating_engine(name: str) -> None:
 # Column sequence updated to match prospects (1) template.xlsx
 
 # Leading prospect block (14 cols). Physicals-first through ``weight_lbs``, then IDs /
-# school / bio through ``status``. ``height_ft`` remains computed in the loader but is
-# not part of the canonical **87** so ``overall_2k`` stays at index **34** (column AI).
+# school / bio through ``status``. ``height_ft`` is supplied by :mod:`src.exporters.data_loader`
+# and is surfaced next to ``height_in`` in DataFrame ordering for CSV/Streamlit —
+# Automation still anchors ``overall_2k`` at index **34**, so ``height_ft`` is **not**
+# injected into this canonical tuple (see :data:`PROSPECTS_TABLE_COLUMNS`).
 PROSPECTS_BIO_COLUMNS: tuple[str, ...] = (
     "pos",
     "secondary_position",
